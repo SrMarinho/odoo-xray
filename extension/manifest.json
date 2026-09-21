@@ -1,0 +1,16 @@
+{
+  "manifest_version": 3,
+  "name": "Odoo X-Ray",
+  "version": "0.1.0",
+  "description": "Hover num campo do Odoo, veja o modelo/campo/módulo, abra o arquivo:linha no VSCode.",
+  "permissions": ["storage"],
+  "content_scripts": [
+    {
+      "matches": ["http://*/odoo/*", "http://*/web*", "https://*/odoo/*", "https://*/web*"],
+      "js": ["src/rpc.js", "src/extract.js", "src/tooltip.js", "src/content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "options_page": "options/options.html",
+  "icons": {}
+}

@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Odoo X-Ray — Opções</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 640px; margin: 24px auto; color: #222; }
+  h1 { font-size: 18px; }
+  label { display: block; margin-top: 16px; font-weight: 600; }
+  input[type=text] { width: 100%; box-sizing: border-box; padding: 6px; font-family: monospace; }
+  .row { display: flex; gap: 8px; margin-top: 6px; }
+  .row input { flex: 1; }
+  .row button { flex: 0 0 auto; }
+  #mappings div.pair { margin-top: 6px; }
+  .hint { color: #666; font-size: 12px; margin-top: 4px; }
+  #status { margin-top: 16px; color: green; font-size: 13px; }
+</style>
+</head>
+<body>
+<h1>Odoo X-Ray</h1>
+
+<label><input type="checkbox" id="enabled"> Ativo (Alt+hover mostra o tooltip)</label>
+
+<label for="editorTemplate">Comando do editor</label>
+<input type="text" id="editorTemplate" placeholder="vscode://file/{file}:{line}">
+<div class="hint">Placeholders: {file} (caminho no host) e {line}.</div>
+
+<label>Mapeamento container → host</label>
+<div class="hint">Caminho do <code>addons_path</code> visto pelo Odoo (dentro do container) → caminho real no seu disco. Prefixo mais longo ganha.</div>
+<div id="mappings"></div>
+<div class="row">
+  <input type="text" id="newContainer" placeholder="/mnt/odoo-cotacao">
+  <input type="text" id="newHost" placeholder="/home/voce/projects/credsus/odoo-cotacao">
+  <button id="addMapping">+</button>
+</div>
+
+<button id="save" style="margin-top:20px;">Salvar</button>
+<span id="status"></span>
+
+<script src="options.js"></script>
+</body>
+</html>
