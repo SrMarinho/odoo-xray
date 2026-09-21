@@ -92,11 +92,19 @@ function xrayGetTooltip() {
   return xrayTooltipEl;
 }
 
+// Esconder tem uma folga de 250ms: sem isso, o instante em que o mouse sai
+// do campo em direção ao próprio tooltip (pra clicar num link) já dispara
+// hide antes do clique chegar — o tooltip "foge" do cursor.
+let xrayHideTimer = null;
 function xrayHide() {
-  if (xrayTooltipEl) xrayTooltipEl.host.style.display = 'none';
+  clearTimeout(xrayHideTimer);
+  xrayHideTimer = setTimeout(() => {
+    if (xrayTooltipEl) xrayTooltipEl.host.style.display = 'none';
+  }, 250);
 }
 
 function xrayRenderBasic(info, x, y) {
+  clearTimeout(xrayHideTimer);
   const { host, box } = xrayGetTooltip();
   box.innerHTML =
     '<div class="xray-row xray-title">' + info.model + '.' + info.field + '</div>' +
@@ -158,6 +166,13 @@ function xrayRenderLocations(info, res) {
 let xrayHoverTimer = null;
 
 document.addEventListener('mousemove', (e) => {
+  // evento retargeted pro shadow host quando o mouse está em cima do próprio
+  // tooltip (o listener está fora da shadow tree) — não conta como "saiu do
+  // campo", senão nunca dá pra alcançar o link pra clicar.
+  if (xrayTooltipEl && e.target === xrayTooltipEl.host) {
+    clearTimeout(xrayHideTimer);
+    return;
+  }
   if (!xrayEnabled || !e.altKey) {
     xrayHide();
     return;
