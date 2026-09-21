@@ -20,7 +20,60 @@ function xrayExtractFromInfo(info) {
   return { model: info.resModel, field: field.name, type: field.type || null };
 }
 
+// Réplica de xrayFindBadgeInfo/xrayExtract (extract.js) com nós fake em vez de
+// DOM real — cobre o bug real achado ao vivo: no Odoo 19 o widget de um campo
+// comum não carrega resModel (às vezes nem tooltip-info nenhum), só o badge
+// "?" do <label>, que é IRMÃO do widget, achado subindo até um ancestral comum.
+function fakeNode({ tag = 'DIV', info = null, children = [], parent = null } = {}) {
+  const node = {
+    tag,
+    info,
+    children,
+    parent,
+    matches(sel) { return sel === 'sup[data-tooltip-info]' && tag === 'SUP' && info; },
+    querySelector(sel) {
+      if (sel !== 'sup[data-tooltip-info]') return null;
+      const stack = [...node.children];
+      while (stack.length) {
+        const n = stack.shift();
+        if (n.tag === 'SUP' && n.info) return { getAttribute: () => JSON.stringify(n.info) };
+        stack.push(...n.children);
+      }
+      return null;
+    },
+    get parentElement() { return node.parent; },
+  };
+  children.forEach((c) => { c.parent = node; });
+  return node;
+}
+
+function xrayFindBadgeInfo(startEl) {
+  let node = startEl, level = 0;
+  while (node && level < 6) {
+    const supAttr = node.matches('sup[data-tooltip-info]')
+      ? { getAttribute: () => JSON.stringify(node.info) }
+      : node.querySelector('sup[data-tooltip-info]');
+    if (supAttr) {
+      try { return JSON.parse(supAttr.getAttribute('data-tooltip-info')); } catch (e) { /* segue */ }
+    }
+    node = node.parentElement;
+    level++;
+  }
+  return null;
+}
+
 const assert = require('assert');
+
+// widget sem tooltip-info nenhum (char comum), badge 2 níveis acima (irmão)
+const sup = fakeNode({ tag: 'SUP', info: { resModel: 'res.partner', field: { name: 'email' } } });
+const label = fakeNode({ tag: 'LABEL', children: [sup] });
+const widget = fakeNode({ tag: 'DIV' });
+const row = fakeNode({ tag: 'DIV', children: [label, widget] }); // ancestral comum
+assert.deepStrictEqual(xrayFindBadgeInfo(widget), { resModel: 'res.partner', field: { name: 'email' } });
+
+// nada em 6 níveis -> null, não trava
+const orphan = fakeNode({ tag: 'DIV' });
+assert.strictEqual(xrayFindBadgeInfo(orphan), null);
 
 const mappings = [
   { container: '/mnt/odoo-cotacao', host: '/home/x/credsus/odoo-cotacao' },

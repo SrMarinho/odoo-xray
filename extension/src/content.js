@@ -3,6 +3,44 @@
 
 const XRAY_DEBOUNCE_MS = 120;
 
+// CSS do tooltip, injetado num Shadow DOM — por isso é uma string JS em vez
+// de manifest.json "css": o tema do Odoo não pode vazar pra dentro nem o
+// inverso, e content_scripts.css não atravessa a fronteira do shadow root.
+// Vive aqui (não em arquivo à parte) porque um arquivo extra no content_scripts
+// não estava sendo reinjetado pelo "recarregar" do Chrome — menos arquivos,
+// menos chance de o browser perder um na hora de recarregar.
+// :host, não '#xray-tooltip-host' — este CSS vive DENTRO do shadow root, e de
+// lá um seletor de id não alcança o elemento host (que está fora). Com o
+// seletor errado o host fica position:static e o tooltip vai parar no fim do
+// documento em vez de flutuar no cursor.
+const XRAY_TOOLTIP_CSS = `
+:host {
+  position: fixed;
+  z-index: 2147483647;
+  display: none;
+  font-family: monospace;
+  font-size: 12px;
+  pointer-events: auto;
+}
+.xray-box {
+  background: #1e1e1e;
+  color: #d4d4d4;
+  border: 1px solid #454545;
+  border-radius: 4px;
+  padding: 6px 8px;
+  min-width: 220px;
+  max-width: 480px;
+  box-shadow: 0 4px 12px rgba(0,0,0,.4);
+}
+.xray-row { padding: 2px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.xray-title { font-weight: bold; color: #9cdcfe; }
+.xray-loading, .xray-muted { color: #808080; font-style: italic; }
+.xray-error { color: #f48771; }
+.xray-loc { cursor: default; }
+.xray-clickable { cursor: pointer; color: #4ec9b0; }
+.xray-clickable:hover { text-decoration: underline; }
+`;
+
 let xrayEnabled = true;
 let xrayMappings = []; // [{container: '/mnt/odoo-cotacao', host: '/home/.../odoo-cotacao'}]
 let xrayEditorTemplate = 'vscode://file/{file}:{line}';
@@ -40,6 +78,8 @@ function xrayGetTooltip() {
   if (xrayTooltipEl) return xrayTooltipEl;
   const host = document.createElement('div');
   host.id = 'xray-tooltip-host';
+  // inline ganha do CSS da página e não depende do :host acima ter pegado
+  host.style.cssText = 'position:fixed;z-index:2147483647;display:none;';
   document.documentElement.appendChild(host);
   const shadow = host.attachShadow({ mode: 'open' });
   const style = document.createElement('style');
@@ -112,14 +152,13 @@ function xrayRenderLocations(info, res) {
   }
 }
 
+// e.altKey vem no próprio evento de mousemove, atualizado a cada disparo —
+// mais confiável que rastrear keydown/keyup numa variável à parte (que
+// trava 'preso' se o foco sair da página ou o SO engolir o keyup).
 let xrayHoverTimer = null;
-let xrayAltHeld = false;
-window.addEventListener('keydown', (e) => { if (e.key === 'Alt') xrayAltHeld = true; });
-window.addEventListener('keyup', (e) => { if (e.key === 'Alt') xrayAltHeld = false; });
-window.addEventListener('blur', () => { xrayAltHeld = false; });
 
 document.addEventListener('mousemove', (e) => {
-  if (!xrayEnabled || !xrayAltHeld) {
+  if (!xrayEnabled || !e.altKey) {
     xrayHide();
     return;
   }

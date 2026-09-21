@@ -7,7 +7,7 @@
   "content_scripts": [
     {
       "matches": ["http://*/odoo/*", "http://*/web*", "https://*/odoo/*", "https://*/web*"],
-      "js": ["src/rpc.js", "src/extract.js", "src/tooltip.js", "src/content.js"],
+      "js": ["src/rpc.js", "src/extract.js", "src/content.js"],
       "run_at": "document_idle"
     }
   ],

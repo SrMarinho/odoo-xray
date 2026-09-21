@@ -1,16 +1,52 @@
 // Extração pura: elemento sob o cursor -> {model, field, type, widget, ...} | null
-// Fonte: addons/web/static/src/views/fields/field.xml:5 põe data-tooltip-info
-// no div raiz de todo widget de campo, quando odoo.debug está ligado.
-function xrayExtract(el) {
-  const node = el && el.closest && el.closest('[data-tooltip-info]');
-  if (!node) return null;
-
-  let info;
-  try {
-    info = JSON.parse(node.getAttribute('data-tooltip-info'));
-  } catch (e) {
-    return null; // JSON quebrado não deve derrubar o hover
+//
+// Odoo 19 espalha o tooltip técnico de forma inconsistente entre widgets
+// (verificado ao vivo, não é o que a doc/template sugere à primeira leitura):
+//   - addons/web/static/src/views/fields/field.js `get tooltip()` só passa
+//     {field, fieldInfo} pra getTooltipInfo() — quando o WIDGET tem
+//     data-tooltip-info, nunca carrega resModel. E em campos simples (char
+//     etc.) o widget não tem o atributo nenhum, só o label.
+//   - addons/web/static/src/views/form/form_label.js é quem manda o pacote
+//     completo (com resModel) sempre, mas só no badge "?" (<sup
+//     data-tooltip-info>) dentro do <label>, que é IRMÃO do widget — nunca
+//     ancestral/descendente dele.
+// Por isso: sobe do alvo até 6 níveis procurando esse badge num ancestral
+// comum. Se o alvo também tiver seu próprio data-tooltip-info (ex.
+// statusbar), usa como base e só completa o resModel que falta; senão usa
+// o do badge como fonte inteira.
+function xrayFindBadgeInfo(startEl) {
+  let node = startEl, level = 0;
+  while (node && level < 6) {
+    const sup = node.matches && node.matches('sup[data-tooltip-info]')
+      ? node
+      : (node.querySelector && node.querySelector('sup[data-tooltip-info]'));
+    if (sup) {
+      try {
+        return JSON.parse(sup.getAttribute('data-tooltip-info'));
+      } catch (e) { /* segue procurando */ }
+    }
+    node = node.parentElement;
+    level++;
   }
+  return null;
+}
+
+function xrayExtract(el) {
+  if (!el) return null;
+
+  const direct = el.closest && el.closest('[data-tooltip-info]');
+  let info = null;
+  if (direct) {
+    try {
+      info = JSON.parse(direct.getAttribute('data-tooltip-info'));
+    } catch (e) { /* JSON quebrado não deve derrubar o hover */ }
+  }
+
+  if (!info || !info.resModel) {
+    const badgeInfo = xrayFindBadgeInfo(el);
+    if (badgeInfo) info = info ? { ...info, resModel: info.resModel || badgeInfo.resModel } : badgeInfo;
+  }
+  if (!info) return null;
 
   const field = info.field || {};
   if (!info.resModel || !field.name) return null;
@@ -23,6 +59,6 @@ function xrayExtract(el) {
     widget: field.widget || null,
     required: !!field.required,
     readonly: !!field.readonly,
-    node,
+    node: direct || el,
   };
 }
