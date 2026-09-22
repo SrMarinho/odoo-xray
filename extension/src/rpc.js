@@ -18,7 +18,7 @@ async function xrayCallKw(model, method, args) {
   return body.result;
 }
 
-const xrayCache = new Map(); // 'model|field' -> resultado, vida da aba
+const xrayCache = new Map(); // Deduplicate in-flight calls only; never retain session results.
 
 async function xrayLocateField(model, field) {
   const key = model + '|' + field;
@@ -27,5 +27,16 @@ async function xrayLocateField(model, field) {
     error: e.message,
   }));
   xrayCache.set(key, promise);
+  promise.then(() => { if (xrayCache.get(key) === promise) xrayCache.delete(key); });
   return promise;
 }
+
+// View provenance is intentionally fresh on every panel opening: edits, group
+// changes and navigation must not reuse a previous resolution.
+async function xrayLocateView(info) {
+  return xrayCallKw('xray.xray', 'locate_view_node', [info.viewId, info.identity])
+    .catch((e) => ({ error: e.message }));
+}
+
+window.addEventListener('pageshow', () => xrayCache.clear());
+window.addEventListener('popstate', () => xrayCache.clear());

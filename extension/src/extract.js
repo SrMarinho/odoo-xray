@@ -34,6 +34,20 @@ function xrayFindBadgeInfo(startEl) {
 function xrayExtract(el) {
   if (!el) return null;
 
+  const marked = el.closest?.('[data-xray-model][data-xray-field]');
+  if (marked) {
+    let identity = null;
+    try { identity = JSON.parse(marked.getAttribute('data-xray-node') || 'null'); } catch (_) { /* field still works */ }
+    return {
+      model: marked.getAttribute('data-xray-model'),
+      field: marked.getAttribute('data-xray-field'),
+      type: marked.getAttribute('data-xray-type'),
+      widget: marked.getAttribute('data-xray-widget'),
+      viewId: Number(marked.getAttribute('data-xray-view-id')) || null,
+      identity, node: marked,
+    };
+  }
+
   const direct = el.closest && el.closest('[data-tooltip-info]');
   let info = null;
   if (direct) {

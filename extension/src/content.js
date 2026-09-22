@@ -12,7 +12,7 @@ const XRAY_DEBOUNCE_MS = 120;
 // :host, não '#xray-tooltip-host' — este CSS vive DENTRO do shadow root, e de
 // lá um seletor de id não alcança o elemento host (que está fora). Com o
 // seletor errado o host fica position:static e o tooltip vai parar no fim do
-// documento em vez de flutuar no cursor.
+// documento em vez de ficar junto ao campo.
 const XRAY_TOOLTIP_CSS = `
 :host {
   position: fixed;
@@ -38,7 +38,8 @@ const XRAY_TOOLTIP_CSS = `
 .xray-error { color: #f48771; }
 .xray-loc { cursor: default; }
 .xray-clickable { cursor: pointer; color: #4ec9b0; }
-.xray-clickable:hover { text-decoration: underline; }
+.xray-clickable:hover, .xray-clickable:focus-visible { text-decoration: underline; }
+.xray-view-button { margin-top:6px; padding:4px 8px; color:#eee; background:#333; border:1px solid #666; border-radius:4px; cursor:pointer; }
 `;
 
 let xrayEnabled = true;
@@ -73,7 +74,25 @@ function xrayOpenInEditor(file, line) {
   window.location.href = xrayEditorTemplate.replace('{file}', file).replace('{line}', String(line));
 }
 
+function xrayMakeEditorLink(element, file, line) {
+  element.classList.add('xray-clickable');
+  element.setAttribute('role', 'link');
+  element.tabIndex = 0;
+  element.title = 'Abrir no editor: ' + file + ':' + line;
+  element.addEventListener('click', (e) => {
+    e.stopPropagation();
+    xrayOpenInEditor(file, line);
+  });
+  element.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    e.stopPropagation();
+    xrayOpenInEditor(file, line);
+  });
+}
+
 let xrayTooltipEl = null;
+let xrayAnchor = null;
 function xrayGetTooltip() {
   if (xrayTooltipEl) return xrayTooltipEl;
   const host = document.createElement('div');
@@ -103,16 +122,41 @@ function xrayHide() {
   }, 250);
 }
 
-function xrayRenderBasic(info, x, y) {
+function xrayPositionTooltip() {
+  if (!xrayAnchor || !xrayTooltipEl || xrayTooltipEl.host.style.display === 'none') return;
+  const { host } = xrayTooltipEl;
+  if (!xrayAnchor.isConnected) {
+    host.style.display = 'none';
+    return;
+  }
+  const rect = xrayAnchor.getBoundingClientRect();
+  const tooltip = host.getBoundingClientRect();
+  const gap = 6;
+  const left = Math.max(gap, Math.min(rect.left, window.innerWidth - tooltip.width - gap));
+  let top = rect.bottom + gap;
+  if (top + tooltip.height > window.innerHeight - gap) top = rect.top - tooltip.height - gap;
+  top = Math.max(gap, Math.min(top, window.innerHeight - tooltip.height - gap));
+  host.style.left = left + 'px';
+  host.style.top = top + 'px';
+}
+
+window.addEventListener('scroll', xrayPositionTooltip, { capture: true, passive: true });
+window.addEventListener('resize', xrayPositionTooltip);
+
+function xrayRenderBasic(info, anchor) {
   clearTimeout(xrayHideTimer);
+  xrayAnchor = anchor;
   const { host, box } = xrayGetTooltip();
-  box.innerHTML =
-    '<div class="xray-row xray-title">' + info.model + '.' + info.field + '</div>' +
-    '<div class="xray-row">' + (info.type || '?') + (info.widget ? ' (' + info.widget + ')' : '') + '</div>' +
-    '<div class="xray-row xray-loading">resolvendo…</div>';
-  host.style.left = x + 12 + 'px';
-  host.style.top = y + 12 + 'px';
+  box.replaceChildren();
+  xrayText(box, 'div', info.model + '.' + info.field, 'xray-row xray-title');
+  xrayText(box, 'div', (info.type || '?') + (info.widget ? ' (' + info.widget + ')' : ''), 'xray-row');
+  xrayText(box, 'div', 'resolvendo…', 'xray-row xray-loading');
+  if (info.viewId && info.identity) {
+    const button = xrayText(box, 'button', 'Ver origem na view', 'xray-view-button');
+    button.addEventListener('click', () => xrayShowViewPanel(info));
+  }
   host.style.display = 'block';
+  xrayPositionTooltip();
 }
 
 function xrayRenderLocations(info, res) {
@@ -137,6 +181,8 @@ function xrayRenderLocations(info, res) {
   }
 
   loadingRow.remove();
+  const title = box.querySelector('.xray-title');
+  let titleLinked = false;
   res.locations.forEach((loc, idx) => {
     const rewritten = xrayRewritePath(loc.file);
     const row = document.createElement('div');
@@ -144,13 +190,20 @@ function xrayRenderLocations(info, res) {
     const label = (idx === 0 ? '▶ ' : '  ') + loc.module + ' — ' + loc.klass + ':' + loc.line;
     row.textContent = rewritten.core ? label + ' (core, sem link)' : label;
     if (rewritten.host) {
-      row.addEventListener('click', (e) => {
-        e.stopPropagation();
-        xrayOpenInEditor(rewritten.host, loc.line);
-      });
+      xrayMakeEditorLink(row, rewritten.host, loc.line);
+      if (!titleLinked) {
+        xrayMakeEditorLink(title, rewritten.host, loc.line);
+        titleLinked = true;
+      }
     }
     box.appendChild(row);
   });
+  if (!titleLinked) {
+    const hint = document.createElement('div');
+    hint.className = 'xray-row xray-muted';
+    hint.textContent = 'Configure o mapeamento container → host nas opções para abrir no editor.';
+    box.appendChild(hint);
+  }
 
   if (res.related) {
     const rel = document.createElement('div');
@@ -166,10 +219,11 @@ function xrayRenderLocations(info, res) {
 let xrayHoverTimer = null;
 
 document.addEventListener('mousemove', (e) => {
+  clearTimeout(xrayHoverTimer);
   // evento retargeted pro shadow host quando o mouse está em cima do próprio
   // tooltip (o listener está fora da shadow tree) — não conta como "saiu do
   // campo", senão nunca dá pra alcançar o link pra clicar.
-  if (xrayTooltipEl && e.target === xrayTooltipEl.host) {
+  if ((xrayTooltipEl && e.target === xrayTooltipEl.host) || (xrayPanel && e.target === xrayPanel.host)) {
     clearTimeout(xrayHideTimer);
     return;
   }
@@ -177,15 +231,120 @@ document.addEventListener('mousemove', (e) => {
     xrayHide();
     return;
   }
-  clearTimeout(xrayHoverTimer);
-  const x = e.clientX, y = e.clientY, target = e.target;
+  const target = e.target;
   xrayHoverTimer = setTimeout(() => {
     const info = xrayExtract(target);
     if (!info) {
       xrayHide();
       return;
     }
-    xrayRenderBasic(info, x, y);
-    xrayLocateField(info.model, info.field).then((res) => xrayRenderLocations(info, res));
+    const anchor = info.node?.matches('[data-xray-model]') ? info.node :
+      target.closest('.o_field_widget, .o_form_label, [data-tooltip-info]') || info.node;
+    clearTimeout(xrayHideTimer);
+    if (xrayAnchor === anchor && xrayTooltipEl && xrayTooltipEl.host.style.display !== 'none') return;
+    xrayRenderBasic(info, anchor);
+    xrayLocateField(info.model, info.field).then((res) => {
+      if (xrayAnchor !== anchor) return;
+      xrayRenderLocations(info, res);
+      xrayPositionTooltip();
+    });
   }, XRAY_DEBOUNCE_MS);
 }, { passive: true });
+
+function xrayText(parent, tag, text, className = '') {
+  const el = document.createElement(tag);
+  el.textContent = text;
+  el.className = className;
+  if (tag === 'button') el.type = 'button';
+  parent.appendChild(el);
+  return el;
+}
+
+let xrayPanel = null;
+let xrayPanelRequest = 0;
+function xrayClosePanel() {
+  xrayPanelRequest++;
+  if (xrayPanel) xrayPanel.host.style.display = 'none';
+}
+
+function xrayGetPanel() {
+  if (xrayPanel) return xrayPanel;
+  const host = document.createElement('div');
+  host.id = 'xray-panel-host';
+  host.style.cssText = 'position:fixed;right:0;top:0;height:100vh;width:min(520px,100vw);z-index:2147483646;';
+  const shadow = host.attachShadow({ mode: 'open' });
+  const style = document.createElement('style');
+  style.textContent = `
+    :host { color:#ddd; font:13px/1.5 system-ui,sans-serif; }
+    * { box-sizing:border-box; }
+    .panel { height:100%; overflow:auto; background:#1e1e1e; border-left:1px solid #555; padding:18px; box-shadow:-4px 0 20px #0005; }
+    .header { display:flex; justify-content:space-between; gap:12px; align-items:center; }
+    button { cursor:pointer; background:#333; color:#eee; border:1px solid #666; border-radius:4px; padding:5px 9px; }
+    h2 { font-size:16px; margin:0; overflow-wrap:anywhere; } h3 { margin:22px 0 8px; font-size:14px; }
+    .entry { border-left:2px solid #555; padding:8px 12px; margin:8px 0; overflow-wrap:anywhere; }
+    .muted { color:#aaa; } .error { color:#f48771; }
+    .xray-clickable { color:#4ec9b0; cursor:pointer; } .xray-clickable:hover { text-decoration:underline; }
+    pre { white-space:pre-wrap; overflow-wrap:anywhere; margin:4px 0; font-size:12px; }
+  `;
+  shadow.appendChild(style);
+  const box = document.createElement('aside');
+  box.className = 'panel';
+  box.setAttribute('aria-label', 'Odoo X-Ray: origem da view');
+  shadow.appendChild(box);
+  shadow.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') { event.stopPropagation(); xrayClosePanel(); }
+  });
+  document.documentElement.appendChild(host);
+  xrayPanel = { host, box };
+  return xrayPanel;
+}
+
+function xraySourceLink(parent, source) {
+  if (!source.file || !source.line) {
+    xrayText(parent, 'div', 'Origem no banco ou sem correspondência segura com arquivo', 'muted');
+    return;
+  }
+  const link = xrayText(parent, 'div', source.file + ':' + source.line);
+  const mapped = xrayRewritePath(source.file);
+  if (mapped.host) xrayMakeEditorLink(link, mapped.host, source.line);
+  else xrayText(parent, 'div', 'Configure o mapeamento deste caminho nas opções.', 'muted');
+}
+
+async function xrayShowViewPanel(info) {
+  const request = ++xrayPanelRequest;
+  const { host, box } = xrayGetPanel();
+  host.style.display = 'block';
+  box.replaceChildren();
+  const header = xrayText(box, 'div', '', 'header');
+  xrayText(header, 'h2', info.model + '.' + info.field);
+  const close = xrayText(header, 'button', 'Fechar');
+  close.addEventListener('click', xrayClosePanel);
+  close.focus();
+  const body = xrayText(box, 'div', 'Resolvendo a herança da view…');
+  const result = await xrayLocateView(info);
+  if (request !== xrayPanelRequest) return;
+  body.replaceChildren();
+  if (result.error) { xrayText(body, 'p', result.error, 'error'); return; }
+  xrayText(body, 'p', result.view.xml_id || result.view.name);
+  xrayText(body, 'pre', result.target.path, 'muted');
+  if (result.warning) xrayText(body, 'p', result.warning, 'muted');
+  xrayText(body, 'h3', 'Histórico do elemento');
+  for (const event of result.history) {
+    const entry = xrayText(body, 'div', '', 'entry');
+    const operation = event.operation === 'create' ? 'criação' : event.operation;
+    xrayText(entry, 'strong', operation + (event.via ? ' via ' + event.via : '') + ' — ' + (event.view.xml_id || event.view.name));
+    if (event.scope) xrayText(entry, 'div', 'No ancestral: ' + event.scope, 'muted');
+    if (event.selector) xrayText(entry, 'pre', event.selector);
+    for (const [name, change] of Object.entries(event.changes || {})) {
+      xrayText(entry, 'pre', name + ': ' + JSON.stringify(change.before) + ' → ' + JSON.stringify(change.after));
+    }
+    xraySourceLink(entry, event);
+  }
+  xrayText(body, 'h3', 'Views na ordem de aplicação');
+  for (const view of result.inheritance_chain) {
+    const entry = xrayText(body, 'div', '', 'entry');
+    xrayText(entry, 'strong', view.xml_id || view.name);
+    xrayText(entry, 'div', 'ID ' + view.id + ' · prioridade ' + view.priority + ' · ' + view.mode, 'muted');
+    xraySourceLink(entry, view);
+  }
+}
