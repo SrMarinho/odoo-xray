@@ -5,6 +5,7 @@ import re
 import odoo
 from odoo import api, models, release
 from odoo.orm.fields import Field
+from odoo.exceptions import AccessError, UserError
 
 
 def _is_synthetic(klass):
@@ -26,11 +27,30 @@ class Xray(models.AbstractModel):
     _name = 'xray.xray'
     _description = 'Odoo X-Ray introspection'
 
+    def _check_xray_access(self):
+        if not self.env.user.has_group('base.group_system'):
+            raise AccessError('Odoo X-Ray: acesso restrito a administradores.')
+
+    @api.model
+    def capabilities(self):
+        allowed = self.env.user.has_group('base.group_system')
+        return {'authorized': allowed, 'version': '19.0.2.0.0',
+                'without_debug': allowed, 'view_provenance': allowed}
+
+    @api.model
+    def locate_view_node(self, view_id, node_identity):
+        self._check_xray_access()
+        from .view_trace import inspect_view_node
+        if not isinstance(node_identity, dict) or not isinstance(view_id, int):
+            raise UserError('Identidade de view inválida.')
+        return inspect_view_node(self.env, view_id, node_identity)
+
     @api.model
     def roots(self):
         """Paths que a extensão precisa mapear pra host, e a versão do Odoo.
         `odoo` é um namespace package (__file__ é None) — release.py não é,
         então é ele que dá o diretório real do core."""
+        self._check_xray_access()
         return {
             'addons': list(odoo.addons.__path__),
             'core': os.path.dirname(release.__file__),
@@ -41,6 +61,7 @@ class Xray(models.AbstractModel):
     def locate_field(self, model, field):
         """file:line de cada classe que declara `field`, ordenado por MRO
         (mais derivado primeiro — override local antes do core)."""
+        self._check_xray_access()
         if model not in self.env:
             return {'error': 'modelo desconhecido: %s' % model}
 
@@ -91,6 +112,7 @@ class Xray(models.AbstractModel):
     @api.model
     def locate_model(self, model):
         """MRO inteira do modelo — toda classe que contribui pra ele."""
+        self._check_xray_access()
         if model not in self.env:
             return {'error': 'modelo desconhecido: %s' % model}
 
@@ -115,6 +137,7 @@ class Xray(models.AbstractModel):
     def locate_method(self, model, name):
         """Toda classe que declara/sobrescreve o método `name`, na ordem
         em que o MRO resolve a chamada (a primeira é quem executa)."""
+        self._check_xray_access()
         if model not in self.env:
             return {'error': 'modelo desconhecido: %s' % model}
 

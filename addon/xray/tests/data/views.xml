@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+  <record id="test_source_view" model="ir.ui.view">
+    <field name="name">xray test base</field>
+    <field name="arch" type="xml">
+      <form>
+        <group name="left">
+          <field name="name"/>
+          <field name="email"/>
+        </group>
+        <group name="right"><field name="phone"/></group>
+      </form>
+    </field>
+  </record>
+</odoo>
