@@ -56,7 +56,7 @@ function xrayExtract(el) {
   // present in record routes such as /odoo/res.partner/1; other routes can
   // still supply it via the native technical tooltip below.
   const widget = el.closest?.('.o_field_widget[name], .o_list_view td[name], button[name][type="object"]');
-  const routeModel = decodeURIComponent((globalThis.location?.pathname || '').match(/^\/odoo\/([a-z][a-z0-9_.]+)(?:\/|$)/)?.[1] || '');
+  const routeModel = decodeURIComponent((globalThis.location?.pathname || '').match(/^\/odoo\/([a-z][a-z0-9_.-]+)(?:\/|$)/)?.[1] || '');
   if (widget && routeModel) {
     const field = widget.getAttribute('name');
     if (field) {

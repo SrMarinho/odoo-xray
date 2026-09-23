@@ -24,8 +24,10 @@ const xrayModels = new Map();
 async function xrayResolveModel(route) {
   if (route.includes('.')) return route;
   if (!xrayModels.has(route)) {
+    const action = route.match(/^action-(\d+)$/);
+    const domain = action ? [['id', '=', Number(action[1])]] : [['path', '=', route]];
     const promise = xrayCallKw('ir.actions.act_window', 'search_read', [
-      [['path', '=', route]], ['res_model'], 0, 1,
+      domain, ['res_model'], 0, 1,
     ]).then((actions) => actions[0]?.res_model || route).catch(() => route);
     xrayModels.set(route, promise);
   }

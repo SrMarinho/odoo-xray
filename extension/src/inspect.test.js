@@ -28,23 +28,25 @@ assert.equal(context.xrayExtract(null), null);
 const legacyInfo = { resModel: 'res.partner', field: { name: 'email', type: 'char' } };
 const legacy = { closest: s => s === '[data-tooltip-info]' ? { getAttribute: () => JSON.stringify(legacyInfo) } : null };
 assert.equal(context.xrayExtract(legacy).field, 'email');
-context.location = { pathname: '/odoo/res.partner/1' };
+context.location = { pathname: '/odoo/action-279/25' };
 const ordinary = { closest: selector => selector.startsWith('.o_field_widget') ? {
-  getAttribute: () => 'name', matches: () => false,
+  getAttribute: () => 'street', matches: () => false,
 } : null };
-assert.equal(context.xrayExtract(ordinary).model, 'res.partner');
-assert.equal(context.xrayExtract(ordinary).field, 'name');
+assert.equal(context.xrayExtract(ordinary).model, 'action-279');
+assert.equal(context.xrayExtract(ordinary).field, 'street');
 
 (async () => {
   let calls = 0;
   const listeners = {};
   const requests = [];
+  const rpcBodies = [];
   const rpcContext = vm.createContext({
     window: { addEventListener: (name, fn) => { listeners[name] = fn; } },
     chrome: { runtime: { sendMessage: (message, callback) => { requests.push(message); callback({ locations: [] }); } } },
     fetch: async (_url, options) => {
       calls++;
       const body = JSON.parse(options.body);
+      rpcBodies.push(body);
       const result = body.params.model === 'ir.ui.view' ? [] :
         body.params.model === 'ir.actions.act_window' ? [{ res_model: 'res.partner' }] :
         { name: { type: 'char' } };
@@ -65,5 +67,9 @@ assert.equal(context.xrayExtract(ordinary).field, 'name');
   assert.equal(requests.at(-1).request.action, 'locate_method');
   assert.equal(await rpcContext.xrayResolveModel('contacts'), 'res.partner');
   assert.equal(calls, 5, 'an action URL resolves through the standard Odoo API');
+  assert.equal(await rpcContext.xrayResolveModel('action-279'), 'res.partner');
+  assert.equal(calls, 6, 'an action-ID URL resolves through the standard Odoo API');
+  assert.equal(rpcBodies.at(-1).params.args[0][0][0], 'id');
+  assert.equal(rpcBodies.at(-1).params.args[0][0][2], 279);
   console.log('inspect.test.js: OK');
 })().catch(error => { console.error(error); process.exitCode = 1; });
