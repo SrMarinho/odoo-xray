@@ -3,7 +3,11 @@
   "name": "Odoo X-Ray",
   "version": "0.1.0",
   "description": "Hover num campo do Odoo, veja o modelo/campo/módulo, abra o arquivo:linha no VSCode.",
-  "permissions": ["storage"],
+  "permissions": ["storage", "nativeMessaging"],
+  "host_permissions": ["http://127.0.0.1:17654/*"],
+  "background": {
+    "service_worker": "src/background.js"
+  },
   "content_scripts": [
     {
       "matches": ["http://*/odoo/*", "http://*/web*", "https://*/odoo/*", "https://*/web*"],

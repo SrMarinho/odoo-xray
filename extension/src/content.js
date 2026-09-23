@@ -71,7 +71,18 @@ function xrayRewritePath(containerPath) {
 }
 
 function xrayOpenInEditor(file, line) {
-  window.location.href = xrayEditorTemplate.replace('{file}', file).replace('{line}', String(line));
+  // Agenda o fallback no service worker antes de entregar o protocolo ao
+  // navegador. Brave/Chrome podem suspender a página enquanto decidem como
+  // tratar vscode://; um timer no content script se perdia nesse intervalo.
+  chrome.runtime.sendMessage({ type: 'xray.openInEditor', file, line }, (res) => {
+    const error = chrome.runtime.lastError?.message || res?.error;
+    if (error) console.warn('Odoo X-Ray: fallback nativo indisponível:', error);
+  });
+
+  const editorUrl = xrayEditorTemplate
+    .replace('{file}', encodeURI(file))
+    .replace('{line}', String(line));
+  window.location.href = editorUrl;
 }
 
 function xrayMakeEditorLink(element, file, line) {

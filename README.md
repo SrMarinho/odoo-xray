@@ -65,12 +65,35 @@ As APIs verificam o grupo de administrador no servidor. O cache de
 arquiteturas separa usuários administradores dos demais; a extensão
 consulta novamente a proveniência a cada abertura do painel.
 
+### Fallback nativo do VS Code (Brave/Linux)
+
+O clique agenda o fallback no service worker e tenta primeiro `vscode://`.
+Após 900 ms, o worker usa Native Messaging sem depender de a aba continuar
+ativa. Para registrar o host local, copie o ID mostrado em
+`brave://extensions` ou `chrome://extensions` e execute:
+
+```sh
+./native/install.sh ID_DA_EXTENSAO
+```
+
+Se a extensão estiver instalada em mais de um navegador, passe todos os IDs
+na mesma execução, separados por espaço.
+
+Depois, recarregue a extensão e a página do Odoo. O host usa a URL interna do
+VS Code Flatpak para ativar o arquivo na linha correta; no VS Code nativo, usa
+`--reuse-window --goto`. O instalador reinicia a ponte a cada atualização e
+preserva o ambiente da sessão gráfica para conseguir focar a janela. Como o
+Brave Flatpak bloqueia Native Messaging externo, o instalador também inicia
+uma ponte restrita a `127.0.0.1:17654`, autorizada apenas para os IDs informados.
+
 ## Testes
 
 - `addon/xray/tests/test_xray.py` — `TransactionCase`, roda no Odoo.
 - `addon/xray/tests/test_views.py` — herança, permissões, identidade e linhas XML.
 - `extension/src/rewrite.test.js` — puro, `node rewrite.test.js`.
 - `extension/src/inspect.test.js` — extrator/RPC reais, `node extension/src/inspect.test.js`.
+- `extension/src/background.test.js` — valida agendamento e mensagem do fallback.
+- `native/test_open_in_vscode.py` — protocolo, comandos do editor e erros do host.
 - `extension/tests/browser.cjs` — Playwright contra Odoo real, sem debug.
   Requer Playwright acessível pelo Node e um banco isolado já instalado:
 
