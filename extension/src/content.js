@@ -104,6 +104,35 @@ function xrayMakeEditorLink(element, file, line) {
 
 let xrayTooltipEl = null;
 let xrayAnchor = null;
+let xrayHighlight = null;
+let xrayPinnedAnchor = null;
+
+function xrayElementTitle(info) {
+  if (info.field) return info.model + '.' + info.field;
+  const detail = info.label || info.name;
+  return '<' + (info.tag || 'element') + (detail ? ' ' + detail : '') + '>';
+}
+
+function xrayShowHighlight(anchor, pinned = false) {
+  if (!anchor?.isConnected) return;
+  if (!xrayHighlight) {
+    xrayHighlight = document.createElement('div');
+    xrayHighlight.id = 'xray-highlight';
+    xrayHighlight.style.cssText = 'position:fixed;z-index:2147483645;pointer-events:none;border:2px solid #4ec9b0;background:#4ec9b019;border-radius:3px;';
+    document.documentElement.appendChild(xrayHighlight);
+  }
+  xrayAnchor = anchor;
+  if (pinned) xrayPinnedAnchor = anchor;
+  const rect = anchor.getBoundingClientRect();
+  Object.assign(xrayHighlight.style, {
+    display: 'block', left: rect.left + 'px', top: rect.top + 'px',
+    width: rect.width + 'px', height: rect.height + 'px',
+  });
+}
+
+function xrayHideHighlight() {
+  if (xrayHighlight && !xrayPinnedAnchor) xrayHighlight.style.display = 'none';
+}
 function xrayGetTooltip() {
   if (xrayTooltipEl) return xrayTooltipEl;
   const host = document.createElement('div');
@@ -130,10 +159,13 @@ function xrayHide() {
   clearTimeout(xrayHideTimer);
   xrayHideTimer = setTimeout(() => {
     if (xrayTooltipEl) xrayTooltipEl.host.style.display = 'none';
+    xrayHideHighlight();
   }, 250);
 }
 
 function xrayPositionTooltip() {
+  if (xrayPinnedAnchor?.isConnected) xrayShowHighlight(xrayPinnedAnchor);
+  else if (xrayAnchor?.isConnected && xrayHighlight?.style.display !== 'none') xrayShowHighlight(xrayAnchor);
   if (!xrayAnchor || !xrayTooltipEl || xrayTooltipEl.host.style.display === 'none') return;
   const { host } = xrayTooltipEl;
   if (!xrayAnchor.isConnected) {
@@ -159,9 +191,14 @@ function xrayRenderBasic(info, anchor) {
   xrayAnchor = anchor;
   const { host, box } = xrayGetTooltip();
   box.replaceChildren();
-  xrayText(box, 'div', info.model + '.' + info.field, 'xray-row xray-title');
-  xrayText(box, 'div', (info.type || '?') + (info.widget ? ' (' + info.widget + ')' : ''), 'xray-row');
-  xrayText(box, 'div', 'resolvendo…', 'xray-row xray-loading');
+  xrayShowHighlight(anchor);
+  xrayText(box, 'div', xrayElementTitle(info), 'xray-row xray-title');
+  if (info.field) {
+    xrayText(box, 'div', (info.type || '?') + (info.widget ? ' (' + info.widget + ')' : ''), 'xray-row');
+    xrayText(box, 'div', 'resolvendo…', 'xray-row xray-loading');
+  } else {
+    xrayText(box, 'div', info.model, 'xray-row xray-muted');
+  }
   if (info.viewId && info.identity) {
     const button = xrayText(box, 'button', 'Ver origem na view', 'xray-view-button');
     button.addEventListener('click', () => xrayShowViewPanel(info));
@@ -254,11 +291,13 @@ document.addEventListener('mousemove', (e) => {
     clearTimeout(xrayHideTimer);
     if (xrayAnchor === anchor && xrayTooltipEl && xrayTooltipEl.host.style.display !== 'none') return;
     xrayRenderBasic(info, anchor);
-    xrayLocateField(info.model, info.field).then((res) => {
-      if (xrayAnchor !== anchor) return;
-      xrayRenderLocations(info, res);
-      xrayPositionTooltip();
-    });
+    if (info.field) {
+      xrayLocateField(info.model, info.field).then((res) => {
+        if (xrayAnchor !== anchor) return;
+        xrayRenderLocations(info, res);
+        xrayPositionTooltip();
+      });
+    }
   }, XRAY_DEBOUNCE_MS);
 }, { passive: true });
 
@@ -276,6 +315,8 @@ let xrayPanelRequest = 0;
 function xrayClosePanel() {
   xrayPanelRequest++;
   if (xrayPanel) xrayPanel.host.style.display = 'none';
+  xrayPinnedAnchor = null;
+  xrayHideHighlight();
 }
 
 function xrayGetPanel() {
@@ -293,6 +334,8 @@ function xrayGetPanel() {
     button { cursor:pointer; background:#333; color:#eee; border:1px solid #666; border-radius:4px; padding:5px 9px; }
     h2 { font-size:16px; margin:0; overflow-wrap:anywhere; } h3 { margin:22px 0 8px; font-size:14px; }
     .entry { border-left:2px solid #555; padding:8px 12px; margin:8px 0; overflow-wrap:anywhere; }
+    .breadcrumbs { display:flex; flex-wrap:wrap; gap:6px; margin:12px 0; }
+    .breadcrumbs button.active { border-color:#4ec9b0; color:#4ec9b0; }
     .muted { color:#aaa; } .error { color:#f48771; }
     .xray-clickable { color:#4ec9b0; cursor:pointer; } .xray-clickable:hover { text-decoration:underline; }
     pre { white-space:pre-wrap; overflow-wrap:anywhere; margin:4px 0; font-size:12px; }
@@ -323,11 +366,12 @@ function xraySourceLink(parent, source) {
 
 async function xrayShowViewPanel(info) {
   const request = ++xrayPanelRequest;
+  if (info.node) xrayShowHighlight(info.node, true);
   const { host, box } = xrayGetPanel();
   host.style.display = 'block';
   box.replaceChildren();
   const header = xrayText(box, 'div', '', 'header');
-  xrayText(header, 'h2', info.model + '.' + info.field);
+  xrayText(header, 'h2', xrayElementTitle(info));
   const close = xrayText(header, 'button', 'Fechar');
   close.addEventListener('click', xrayClosePanel);
   close.focus();
@@ -338,6 +382,18 @@ async function xrayShowViewPanel(info) {
   if (result.error) { xrayText(body, 'p', result.error, 'error'); return; }
   xrayText(body, 'p', result.view.xml_id || result.view.name);
   xrayText(body, 'pre', result.target.path, 'muted');
+  if (result.breadcrumbs?.length) {
+    const breadcrumbs = xrayText(body, 'div', '', 'breadcrumbs');
+    for (const item of result.breadcrumbs) {
+      const label = item.label || item.name;
+      const button = xrayText(breadcrumbs, 'button', item.tag + (label ? ': ' + label : ''),
+        item.path === result.target.path ? 'active' : '');
+      button.addEventListener('click', () => xrayShowViewPanel({
+        ...info, tag: item.tag, name: item.name, label: item.label,
+        field: item.identity.field || null, identity: item.identity,
+      }));
+    }
+  }
   if (result.warning) xrayText(body, 'p', result.warning, 'muted');
   xrayText(body, 'h3', 'Histórico do elemento');
   for (const event of result.history) {
@@ -358,4 +414,34 @@ async function xrayShowViewPanel(info) {
     xrayText(entry, 'div', 'ID ' + view.id + ' · prioridade ' + view.priority + ' · ' + view.mode, 'muted');
     xraySourceLink(entry, view);
   }
+  const attrs = result.target.attributes || {};
+  if (result.target.tag === 'button' && attrs.type === 'object' && attrs.name) {
+    xrayText(body, 'h3', 'Método Python ' + attrs.name);
+    const methodBody = xrayText(body, 'div', 'Localizando overrides…', 'muted');
+    const method = await xrayLocateMethod(info.model, attrs.name);
+    if (request !== xrayPanelRequest) return;
+    methodBody.replaceChildren();
+    if (method.error) {
+      xrayText(methodBody, 'p', method.error, 'error');
+    } else if (!method.overrides?.length) {
+      xrayText(methodBody, 'p', 'Método sem origem Python localizável.', 'muted');
+    } else {
+      for (const override of method.overrides) {
+        const entry = xrayText(methodBody, 'div', '', 'entry');
+        xrayText(entry, 'strong', (override.module || 'core') + ' — ' + override.klass);
+        xraySourceLink(entry, override);
+      }
+    }
+  }
 }
+
+document.addEventListener('click', (event) => {
+  if (!xrayEnabled || !event.altKey) return;
+  if ((xrayTooltipEl && event.target === xrayTooltipEl.host) ||
+      (xrayPanel && event.target === xrayPanel.host)) return;
+  const info = xrayExtract(event.target);
+  if (!info?.viewId || !info.identity) return;
+  event.preventDefault();
+  event.stopImmediatePropagation();
+  xrayShowViewPanel(info);
+}, true);

@@ -15,4 +15,22 @@
             <attribute name="t-att">xrayCellMetadata(record, column)</attribute>
         </xpath>
     </t>
+    <t t-name="xray.OuterGroup" t-inherit="web.Form.OuterGroup" t-inherit-mode="extension">
+        <xpath expr="//div[hasclass('o_group')]" position="attributes">
+            <attribute name="t-att">props.xrayMetadata</attribute>
+        </xpath>
+    </t>
+    <t t-name="xray.InnerGroup" t-inherit="web.Form.InnerGroup" t-inherit-mode="extension">
+        <xpath expr="//div[hasclass('o_inner_group')]" position="attributes">
+            <attribute name="t-att">props.xrayMetadata</attribute>
+        </xpath>
+    </t>
+    <t t-name="xray.Notebook" t-inherit="web.Notebook" t-inherit-mode="extension">
+        <xpath expr="//div[contains(@t-attf-class, 'o_notebook')]" position="attributes">
+            <attribute name="t-att">props.xrayMetadata</attribute>
+        </xpath>
+        <xpath expr="//a[@role='tab']" position="attributes">
+            <attribute name="t-att">navItem[1].xrayMetadata</attribute>
+        </xpath>
+    </t>
 </templates>

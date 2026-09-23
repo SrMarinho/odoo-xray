@@ -12,7 +12,8 @@ if (!url || !db?.startsWith('xray_test_')) throw new Error('Use XRAY_TEST_URL an
   try {
     const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
     const pageErrors = [];
-    page.on('pageerror', error => pageErrors.push(error.message));
+    page.on('pageerror', error => { pageErrors.push(error.message); console.error('pageerror:', error.message); });
+    page.on('console', message => { if (message.type() === 'error') console.error('console:', message.text()); });
     const response = await page.request.post(url + '/web/session/authenticate', {
       data: { jsonrpc: '2.0', method: 'call', params: { db, login: 'admin', password: process.env.XRAY_TEST_PASSWORD || 'admin' } },
     });
@@ -30,6 +31,9 @@ if (!url || !db?.startsWith('xray_test_')) throw new Error('Use XRAY_TEST_URL an
     const field = page.locator('.o_field_widget[data-xray-field="name"]').first();
     await field.waitFor();
     assert.equal(await page.evaluate(() => Boolean(odoo.debug)), false);
+    const markerTags = await page.locator('[data-xray-node]').evaluateAll(nodes =>
+      nodes.map(node => JSON.parse(node.getAttribute('data-xray-node')).tag));
+    assert.ok(markerTags.includes('group'), 'semantic groups must reach the rendered DOM');
     for (const file of ['rpc.js', 'extract.js', 'content.js']) {
       await page.addScriptTag({ path: path.join(__dirname, '../src', file) });
     }
@@ -47,6 +51,7 @@ if (!url || !db?.startsWith('xray_test_')) throw new Error('Use XRAY_TEST_URL an
     await panel.getByRole('heading', { name: 'Views na ordem de aplicação' }).waitFor();
     assert.equal(await panel.locator('.error').count(), 0);
     assert.match(await panel.locator('aside').innerText(), /base\.view_partner_form/);
+    assert.ok(await panel.locator('.breadcrumbs button').count() > 1, 'XML ancestors must be selectable');
     // Validate click routing without launching an external editor during tests.
     await page.evaluate(() => { window.xrayOpened = []; xrayOpenInEditor = (file, line) => window.xrayOpened.push({ file, line }); });
     await field.hover();
@@ -58,7 +63,14 @@ if (!url || !db?.startsWith('xray_test_')) throw new Error('Use XRAY_TEST_URL an
     assert.equal(await panel.isVisible(), true);
     await panel.getByRole('button', { name: 'Fechar' }).click();
     assert.equal(await panel.isVisible(), false);
+    const group = page.locator('.o_group[data-xray-node], .o_inner_group[data-xray-node]').first();
+    const cancelled = await group.evaluate(node => !node.dispatchEvent(new MouseEvent('click', {
+      bubbles: true, cancelable: true, altKey: true,
+    })));
+    assert.equal(cancelled, true, 'Alt+click must suppress the original Odoo action');
+    await panel.getByRole('heading', { name: /^<group/ }).waitFor();
+    await panel.getByRole('button', { name: 'Fechar' }).click();
     assert.deepEqual(pageErrors, []);
-    console.log('browser.cjs: OK (Odoo 19 without debug, metadata, anchored tooltip, provenance panel, editor click)');
+    console.log('browser.cjs: OK (Odoo 19 without debug, semantic metadata, Alt+click, ancestors, editor click)');
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

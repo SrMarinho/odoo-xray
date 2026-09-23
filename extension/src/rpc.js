@@ -38,5 +38,10 @@ async function xrayLocateView(info) {
     .catch((e) => ({ error: e.message }));
 }
 
+async function xrayLocateMethod(model, method) {
+  return xrayCallKw('xray.xray', 'locate_method', [model, method])
+    .catch((e) => ({ error: e.message }));
+}
+
 window.addEventListener('pageshow', () => xrayCache.clear());
 window.addEventListener('popstate', () => xrayCache.clear());
