@@ -34,6 +34,21 @@ const ordinary = { closest: selector => selector.startsWith('.o_field_widget') ?
 } : null };
 assert.equal(context.xrayExtract(ordinary).model, 'action-279');
 assert.equal(context.xrayExtract(ordinary).field, 'street');
+const groupNode = {
+  firstElementChild: null,
+  matches: selector => selector === '.o_inner_group, .o_group',
+};
+const titleCell = { parentElement: groupNode };
+const groupTitle = {
+  textContent: 'Endereço', parentElement: titleCell,
+  closest: selector => selector === '.o_horizontal_separator' ? groupTitle : null,
+};
+groupNode.firstElementChild = titleCell;
+const extractedGroup = context.xrayExtract(groupTitle);
+assert.equal(extractedGroup.model, 'action-279');
+assert.equal(extractedGroup.tag, 'group');
+assert.equal(extractedGroup.label, 'Endereço');
+assert.equal(extractedGroup.field, null);
 
 (async () => {
   let calls = 0;

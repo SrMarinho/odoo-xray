@@ -52,19 +52,66 @@ function xrayExtract(el) {
     };
   }
 
+  const routeModel = decodeURIComponent((globalThis.location?.pathname || '').match(/^\/odoo\/([a-z][a-z0-9_.-]+)(?:\/|$)/)?.[1] || '');
+
   // Odoo renders field names even without the companion addon. The model is
   // present in record routes such as /odoo/res.partner/1; other routes can
   // still supply it via the native technical tooltip below.
-  const widget = el.closest?.('.o_field_widget[name], .o_list_view td[name], button[name][type="object"]');
-  const routeModel = decodeURIComponent((globalThis.location?.pathname || '').match(/^\/odoo\/([a-z][a-z0-9_.-]+)(?:\/|$)/)?.[1] || '');
+  const widget = el.closest?.('.o_field_widget[name], .o_list_view td[name], button[name]');
   if (widget && routeModel) {
     const field = widget.getAttribute('name');
     if (field) {
-      const button = widget.matches('button[type="object"]');
+      const button = widget.matches('button[name]');
       return { model: routeModel, field: button ? null : field, name: field,
         tag: button ? 'button' : 'field', type: null, widget: null, node: widget };
     }
   }
+
+  // Labels point to their widget by input id. Resolve this before structural
+  // containers so a label inside a group keeps describing its own field.
+  const label = el.closest?.('label.o_form_label[for]');
+  if (label && routeModel) {
+    const input = label.ownerDocument?.getElementById(label.getAttribute('for'));
+    const labelWidget = input?.closest('.o_field_widget[name]');
+    const field = labelWidget?.getAttribute('name');
+    if (field) return { model: routeModel, field, name: field, tag: 'field',
+      label: label.textContent.trim(), type: null, widget: null, node: label };
+  }
+
+  // Group titles and tabs are real view nodes, but Odoo's compiler removes
+  // their XML attributes. Their rendered structure is stable in Odoo 19.
+  const separator = el.closest?.('.o_horizontal_separator');
+  if (separator && routeModel) {
+    const group = separator.parentElement?.parentElement;
+    const isGroupTitle = group?.matches('.o_inner_group, .o_group') &&
+      group.firstElementChild === separator.parentElement;
+    return { model: routeModel, field: null, name: null,
+      tag: isGroupTitle ? 'group' : 'separator', label: separator.textContent.trim(),
+      node: separator };
+  }
+
+  const tab = el.closest?.('.o_notebook a.nav-link[role="tab"]');
+  if (tab && routeModel) return { model: routeModel, field: null,
+    name: tab.getAttribute('name'), tag: 'page', label: tab.textContent.trim(), node: tab };
+
+  const heading = el.closest?.('h1, h2, h3, h4, h5, h6');
+  if (heading && routeModel) return { model: routeModel, field: null,
+    name: null, tag: heading.tagName.toLowerCase(), label: heading.textContent.trim(), node: heading };
+
+  const group = el.closest?.('.o_inner_group, .o_group');
+  if (group && routeModel) {
+    const title = group.firstElementChild?.matches('.o_cell') ? null :
+      group.firstElementChild?.querySelector('.o_horizontal_separator')?.textContent.trim() || null;
+    return { model: routeModel, field: null, name: null, tag: 'group', label: title, node: group };
+  }
+
+  const notebook = el.closest?.('.o_notebook');
+  if (notebook && routeModel) return { model: routeModel, field: null,
+    name: null, tag: 'notebook', label: null, node: notebook };
+
+  const sheet = el.closest?.('.o_form_sheet');
+  if (sheet && routeModel) return { model: routeModel, field: null,
+    name: null, tag: 'sheet', label: null, node: sheet };
 
   const direct = el.closest && el.closest('[data-tooltip-info]');
   let info = null;

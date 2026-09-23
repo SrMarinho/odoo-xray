@@ -199,7 +199,7 @@ function xrayRenderBasic(info, anchor) {
   } else {
     xrayText(box, 'div', info.model, 'xray-row xray-muted');
   }
-  if (info.model && (info.identity || info.field || info.tag === 'button')) {
+  if (info.model && (info.identity || info.field || info.tag)) {
     const button = xrayText(box, 'button', 'Ver origem na view', 'xray-view-button');
     button.addEventListener('click', () => xrayShowViewPanel(info));
   }
@@ -444,7 +444,7 @@ async function xrayShowViewPanel(info) {
 
 function xrayRenderStandardViews(body, views, info) {
   xrayText(body, 'p', 'Views do modelo lidas pelas APIs padrão do Odoo. A aplicação exata de cada operação de herança não é exposta pela API.', 'muted');
-  const symbol = info.name || info.field;
+  const symbol = info.name || info.field || info.label;
   const candidates = views.filter((view) => {
     if (!symbol) return true;
     const xml = view.arch_db || '';
@@ -480,7 +480,7 @@ document.addEventListener('click', (event) => {
   if ((xrayTooltipEl && event.target === xrayTooltipEl.host) ||
       (xrayPanel && event.target === xrayPanel.host)) return;
   const info = xrayExtract(event.target);
-  if (!info?.model || !(info.identity || info.field || info.tag === 'button')) return;
+  if (!info?.model || !(info.identity || info.field || info.tag)) return;
   event.preventDefault();
   event.stopImmediatePropagation();
   xrayResolveModel(info.model).then((model) => {
