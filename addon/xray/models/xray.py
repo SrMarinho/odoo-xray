@@ -34,7 +34,7 @@ class Xray(models.AbstractModel):
     @api.model
     def capabilities(self):
         allowed = self.env.user.has_group('base.group_system')
-        return {'authorized': allowed, 'version': '19.0.2.0.0',
+        return {'authorized': allowed, 'version': '19.0.3.0.0',
                 'without_debug': allowed, 'view_provenance': allowed}
 
     @api.model

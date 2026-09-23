@@ -1,8 +1,9 @@
 # Odoo X-Ray
 
-Extensão Chrome (MV3) para Odoo 19: Alt+hover num campo mostra modelo, campo
-e onde cada módulo o declara — clique/Enter abre no VS Code. Funciona sem
-modo debug, para administradores do sistema (`base.group_system`).
+Extensão Chrome/Firefox para Odoo 19: Alt+hover destaca campos e elementos
+renderizados do formulário e mostra sua origem. Alt+click abre o inspetor sem
+executar a ação do Odoo. Links de arquivo abrem no VS Code na linha correta.
+Funciona sem modo debug para administradores (`base.group_system`).
 
 O addon usa `type(model).mro()` + `inspect` para localizar código Python.
 Para XML, acompanha as operações reais de herança do Odoo durante a
@@ -27,7 +28,8 @@ os que o `dbctl` cria por branch).
 **Atualizar uma instalação existente:** reiniciar o processo Odoo para
 carregar o código Python, atualizar o módulo `xray` (`-u xray -d <db>`),
 recarregar a extensão e atualizar a página. O upgrade registra os assets
-que identificam campos e labels sem depender dos tooltips de debug.
+que identificam campos, botões, grupos, abas, separadores e HTML sem depender
+dos tooltips de debug.
 
 **Testar em banco separado:**
 ```
@@ -43,17 +45,22 @@ Nas opções: mapear os paths de container do Odoo (ex. `/mnt/odoo-cotacao`)
 pros paths reais no seu disco, e o template do editor
 (`vscode://file/{file}:{line}` por padrão).
 
-Abrir o Odoo normalmente, segurar **Alt** e passar o mouse num campo ou
-label. Também há metadados nas células de listas, inclusive valores que
-não usam um widget. O extrator antigo continua disponível para addons
-anteriores, que precisam de `?debug=1`.
+Abrir o Odoo normalmente, segurar **Alt** e passar o mouse no elemento. O
+contorno fica preso ao elemento renderizado. Use **Alt+click** para abrir o
+inspetor diretamente; o clique comum continua com o comportamento do Odoo.
+Também há metadados nas células de listas, inclusive valores sem widget. O
+extrator antigo continua disponível para addons anteriores, que precisam de
+`?debug=1`.
 
 ### Origem nas views
 
 No tooltip, **Ver origem na view** abre um painel com a cadeia de views
-aplicadas e o histórico do campo: criação, atributos, inserções,
-substituições e movimentos. Campos repetidos e subviews inline são
-identificados pelo caminho no XML, não somente pelo nome.
+aplicadas e o histórico do elemento: criação, atributos, inserções,
+substituições e movimentos. O breadcrumb permite trocar do alvo para seus
+ancestrais XML, como grupo, página, notebook, sheet e form. Elementos
+repetidos e subviews inline são identificados pelo caminho no XML, não
+somente pelo nome. Em botões `type="object"`, o painel também lista a cadeia
+de overrides do método Python.
 
 O painel abre o XML no editor quando o arquivo corresponde à definição
 no banco. Views do Studio, arquivos ausentes ou XML divergente são

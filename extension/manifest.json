@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Odoo X-Ray",
-  "version": "0.1.0",
-  "description": "Hover num campo do Odoo, veja o modelo/campo/módulo, abra o arquivo:linha no VSCode.",
+  "version": "0.2.0",
+  "description": "Inspecione campos e elementos de views do Odoo e abra sua origem no VS Code.",
   "permissions": ["storage", "nativeMessaging"],
   "host_permissions": ["http://127.0.0.1:17654/*"],
   "background": {
