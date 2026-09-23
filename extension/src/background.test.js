@@ -14,6 +14,7 @@ const context = vm.createContext({
   },
   fetch: async () => { throw new Error('bridge should not be needed'); },
   chrome: {
+    storage: { sync: { get(_keys, callback) { callback({ mappings: [{ host: '/tmp/project' }] }); } } },
     runtime: {
       id: 'extension-id',
       lastError: null,
@@ -36,6 +37,16 @@ const pending = listener(
 assert.equal(pending, true);
 assert.equal(JSON.stringify(nativeRequest), JSON.stringify({ action: 'open', file: '/tmp/model.py', line: 37 }));
 assert.equal(JSON.stringify(response), JSON.stringify({ ok: true }));
+
+response = null;
+assert.equal(listener(
+  { type: 'xray.localRequest', request: { action: 'locate_field', model: 'res.partner', field: 'name' } },
+  { id: 'extension-id', tab: { url: 'http://localhost:8069/odoo/res.partner/1' } },
+  value => { response = value; },
+), true);
+assert.equal(nativeRequest.action, 'locate_field');
+assert.equal(JSON.stringify(nativeRequest.roots), JSON.stringify(['/tmp/project']));
+assert.equal(response.ok, true);
 
 response = null;
 assert.equal(listener(

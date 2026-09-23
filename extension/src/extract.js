@@ -52,6 +52,20 @@ function xrayExtract(el) {
     };
   }
 
+  // Odoo renders field names even without the companion addon. The model is
+  // present in record routes such as /odoo/res.partner/1; other routes can
+  // still supply it via the native technical tooltip below.
+  const widget = el.closest?.('.o_field_widget[name], .o_list_view td[name], button[name][type="object"]');
+  const routeModel = decodeURIComponent((globalThis.location?.pathname || '').match(/^\/odoo\/([a-z][a-z0-9_.]+)(?:\/|$)/)?.[1] || '');
+  if (widget && routeModel) {
+    const field = widget.getAttribute('name');
+    if (field) {
+      const button = widget.matches('button[type="object"]');
+      return { model: routeModel, field: button ? null : field, name: field,
+        tag: button ? 'button' : 'field', type: null, widget: null, node: widget };
+    }
+  }
+
   const direct = el.closest && el.closest('[data-tooltip-info]');
   let info = null;
   if (direct) {
@@ -72,6 +86,8 @@ function xrayExtract(el) {
   return {
     model: info.resModel,
     field: field.name,
+    name: field.name,
+    tag: 'field',
     label: field.label || null,
     type: field.type || null,
     widget: field.widget || null,

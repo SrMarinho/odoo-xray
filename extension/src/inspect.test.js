@@ -28,24 +28,42 @@ assert.equal(context.xrayExtract(null), null);
 const legacyInfo = { resModel: 'res.partner', field: { name: 'email', type: 'char' } };
 const legacy = { closest: s => s === '[data-tooltip-info]' ? { getAttribute: () => JSON.stringify(legacyInfo) } : null };
 assert.equal(context.xrayExtract(legacy).field, 'email');
+context.location = { pathname: '/odoo/res.partner/1' };
+const ordinary = { closest: selector => selector.startsWith('.o_field_widget') ? {
+  getAttribute: () => 'name', matches: () => false,
+} : null };
+assert.equal(context.xrayExtract(ordinary).model, 'res.partner');
+assert.equal(context.xrayExtract(ordinary).field, 'name');
 
 (async () => {
   let calls = 0;
   const listeners = {};
+  const requests = [];
   const rpcContext = vm.createContext({
     window: { addEventListener: (name, fn) => { listeners[name] = fn; } },
-    fetch: async () => { calls++; return { ok: true, json: async () => ({ result: { locations: [] } }) }; },
+    chrome: { runtime: { sendMessage: (message, callback) => { requests.push(message); callback({ locations: [] }); } } },
+    fetch: async (_url, options) => {
+      calls++;
+      const body = JSON.parse(options.body);
+      const result = body.params.model === 'ir.ui.view' ? [] :
+        body.params.model === 'ir.actions.act_window' ? [{ res_model: 'res.partner' }] :
+        { name: { type: 'char' } };
+      return { ok: true, json: async () => ({ result }) };
+    },
   });
   vm.runInContext(fs.readFileSync(path.join(__dirname, 'rpc.js'), 'utf8'), rpcContext);
   await Promise.all([rpcContext.xrayLocateField('res.partner', 'name'), rpcContext.xrayLocateField('res.partner', 'name')]);
   assert.equal(calls, 1, 'concurrent requests are deduplicated');
   await rpcContext.xrayLocateField('res.partner', 'name');
   assert.equal(calls, 2, 'settled data is not reused across session changes');
-  const info = { viewId: 42, identity: {} };
+  assert.equal(requests[0].request.action, 'locate_field');
+  const info = { model: 'res.partner', field: 'name' };
   await rpcContext.xrayLocateView(info);
   await rpcContext.xrayLocateView(info);
-  assert.equal(calls, 4, 'view history is refreshed on every opening');
+  assert.equal(calls, 4, 'views are refreshed on every opening');
   await rpcContext.xrayLocateMethod('res.partner', 'write');
-  assert.equal(calls, 5, 'methods can be resolved for object buttons');
+  assert.equal(requests.at(-1).request.action, 'locate_method');
+  assert.equal(await rpcContext.xrayResolveModel('contacts'), 'res.partner');
+  assert.equal(calls, 5, 'an action URL resolves through the standard Odoo API');
   console.log('inspect.test.js: OK');
 })().catch(error => { console.error(error); process.exitCode = 1; });

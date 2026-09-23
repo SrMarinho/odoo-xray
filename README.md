@@ -1,18 +1,23 @@
 # Odoo X-Ray
 
-Extensão Chrome/Firefox para Odoo 19: Alt+hover destaca campos e elementos
-renderizados do formulário e mostra sua origem. Alt+click abre o inspetor sem
-executar a ação do Odoo. Links de arquivo abrem no VS Code na linha correta.
-Funciona sem modo debug para administradores (`base.group_system`).
+Extensão Chrome/Firefox para Odoo 19: Alt+hover destaca campos renderizados
+e mostra sua origem. Alt+click abre o inspetor sem executar a ação do Odoo.
+Links de arquivo abrem no VS Code na linha correta. O fluxo principal usa as
+APIs padrão do Odoo e uma ponte local; nenhum módulo X-Ray precisa ser
+instalado no banco ou injetado no projeto Odoo.
 
-O addon usa `type(model).mro()` + `inspect` para localizar código Python.
-Para XML, acompanha as operações reais de herança do Odoo durante a
-inspeção, sem persistir marcadores nem substituir o resolvedor de views.
+O host local lê os arquivos Python nos diretórios configurados em Options e
+encontra declarações de campo e método por análise de sintaxe. A extensão
+consulta `fields_get` e `ir.ui.view` pela sessão do navegador. Na inspeção
+sem addon, as views exibidas são candidatas que mencionam o elemento; a API
+padrão não informa a sequência exata de alterações da herança nem fornece
+um vínculo seguro entre cada elemento DOM e sua linha XML.
 
 ## Addon (`addon/xray/`)
 
-Módulo Odoo genérico (`depends: ['web']`, `auto_install: True`), agnóstico
-de projeto — não referencia nada do credsus nem qualquer outro monorepo.
+Módulo legado opcional (`auto_install: False`) para inspeção detalhada da
+herança XML. O fluxo padrão não depende dele. Não referencia nenhum projeto
+específico.
 
 **Instalar (dev):** montar `addon/` em `/mnt/extra-addons` — já é volume e já
 está no `addons_path` de qualquer setup Odoo padrão. No credsus:
@@ -22,8 +27,8 @@ está no `addons_path` de qualquer setup Odoo padrão. No credsus:
 - ../odoo-xray/addon:/mnt/extra-addons
 ```
 
-`auto_install` cuida do resto — instala sozinho em todo banco novo (inclusive
-os que o `dbctl` cria por branch).
+Instale somente se desejar o histórico exato da herança XML. A extensão
+funciona sem essa instalação.
 
 **Atualizar uma instalação existente:** reiniciar o processo Odoo para
 carregar o código Python, atualizar o módulo `xray` (`-u xray -d <db>`),
@@ -81,6 +86,11 @@ Nas opções: mapear os paths de container do Odoo (ex. `/mnt/odoo-cotacao`)
 pros paths reais no seu disco, e o template do editor
 (`vscode://file/{file}:{line}` por padrão).
 
+Para Brave/Chrome, execute novamente `./native/install.sh ID_DA_EXTENSAO`
+após atualizar o projeto: o host passa a localizar arquivos Python. O
+mapeamento em Options deve apontar para a raiz do código no host. No Firefox,
+execute novamente `python3 native/install-firefox.py`.
+
 Abrir o Odoo normalmente, segurar **Alt** e passar o mouse no elemento. O
 contorno fica preso ao elemento renderizado. Use **Alt+click** para abrir o
 inspetor diretamente; o clique comum continua com o comportamento do Odoo.
@@ -90,23 +100,18 @@ extrator antigo continua disponível para addons anteriores, que precisam de
 
 ### Origem nas views
 
-No tooltip, **Ver origem na view** abre um painel com a cadeia de views
-aplicadas e o histórico do elemento: criação, atributos, inserções,
-substituições e movimentos. O breadcrumb permite trocar do alvo para seus
-ancestrais XML, como grupo, página, notebook, sheet e form. Elementos
-repetidos e subviews inline são identificados pelo caminho no XML, não
-somente pelo nome. Em botões `type="object"`, o painel também lista a cadeia
-de overrides do método Python.
+No tooltip, **Ver origem na view** abre um painel com as views que mencionam
+o elemento. O módulo opcional ainda pode produzir marcadores para grupos,
+abas e outros elementos, mas a extensão não depende deles. Em botões
+`type="object"`, o painel busca as declarações do método Python no código
+local configurado.
 
-O painel abre o XML no editor quando o arquivo corresponde à definição
-no banco. Views do Studio, arquivos ausentes ou XML divergente são
-mostrados sem inventar uma linha. Alterações em tempo de execução por
-código Python podem não ter uma origem XML rastreável. Se a view mudou
-desde o carregamento da página, a extensão solicita recarregá-la.
+Sem addon, o painel lista as views acessíveis que mencionam o elemento e
+mostra a cadeia de herança declarada. O caminho `arch_fs` aparece como
+referência; a extensão não inventa uma linha de XML. A localização Python
+é calculada a partir dos arquivos presentes nos diretórios locais mapeados.
 
-As APIs verificam o grupo de administrador no servidor. O cache de
-arquiteturas separa usuários administradores dos demais; a extensão
-consulta novamente a proveniência a cada abertura do painel.
+O acesso às views continua sujeito às permissões padrão do Odoo.
 
 ### Fallback nativo do VS Code (Brave/Linux)
 

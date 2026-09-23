@@ -22,41 +22,57 @@ function xrayValidOpenMessage(message) {
     message.line > 0;
 }
 
+function xrayValidLookup(message) {
+  const request = message?.request;
+  return message?.type === 'xray.localRequest' &&
+    ['locate_field', 'locate_method'].includes(request?.action) &&
+    typeof request.model === 'string' &&
+    typeof (request.field || request.method) === 'string';
+}
+
+function xraySendLocal(request, sendResponse) {
+  chrome.runtime.sendNativeMessage(XRAY_NATIVE_HOST, request, (response) => {
+    const nativeError = chrome.runtime.lastError?.message;
+    if (!nativeError && response?.ok) {
+      sendResponse(response);
+      return;
+    }
+    fetch(XRAY_LOCAL_BRIDGE, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Odoo-XRay-Extension': chrome.runtime.id,
+      },
+      body: JSON.stringify(request),
+    })
+      .then(async (bridgeResponse) => {
+        const body = await bridgeResponse.json();
+        if (!bridgeResponse.ok || !body.ok) throw new Error(body.error || 'ponte local recusou o pedido');
+        sendResponse(body);
+      })
+      .catch((error) => sendResponse({
+        error: [nativeError, 'ponte local: ' + error.message].filter(Boolean).join('; '),
+      }));
+  });
+}
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (!xrayAllowedSender(sender) || !xrayValidOpenMessage(message)) {
+  if (!xrayAllowedSender(sender) || !(xrayValidOpenMessage(message) || xrayValidLookup(message))) {
     sendResponse({ ok: false, error: 'pedido de abertura inválido' });
     return false;
   }
 
+  if (xrayValidLookup(message)) {
+    chrome.storage.sync.get(['mappings'], (settings) => {
+      const roots = (settings.mappings || []).map((mapping) => mapping.host);
+      xraySendLocal({ ...message.request, roots }, sendResponse);
+    });
+    return true;
+  }
+
   const request = { action: 'open', file: message.file, line: message.line };
   setTimeout(() => {
-    chrome.runtime.sendNativeMessage(XRAY_NATIVE_HOST, request, (response) => {
-      const nativeError = chrome.runtime.lastError?.message;
-      if (!nativeError && response?.ok) {
-        sendResponse(response);
-        return;
-      }
-
-      fetch(XRAY_LOCAL_BRIDGE, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Odoo-XRay-Extension': chrome.runtime.id,
-        },
-        body: JSON.stringify(request),
-      })
-        .then(async (bridgeResponse) => {
-          const body = await bridgeResponse.json();
-          if (!bridgeResponse.ok || !body.ok) {
-            throw new Error(body.error || 'ponte local recusou o pedido');
-          }
-          sendResponse(body);
-        })
-        .catch((error) => sendResponse({
-          ok: false,
-          error: [nativeError, 'ponte local: ' + error.message].filter(Boolean).join('; '),
-        }));
-    });
+    xraySendLocal(request, sendResponse);
   }, XRAY_FALLBACK_DELAY_MS);
   return true;
 });

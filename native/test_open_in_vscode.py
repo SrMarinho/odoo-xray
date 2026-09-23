@@ -11,6 +11,25 @@ import open_in_vscode
 
 
 class NativeHostTest(unittest.TestCase):
+    def test_finds_field_and_method_without_odoo_module(self):
+        with tempfile.TemporaryDirectory() as directory:
+            model_dir = os.path.join(directory, 'addons', 'custom', 'models')
+            os.makedirs(model_dir)
+            source = os.path.join(model_dir, 'partner.py')
+            with open(source, 'w') as handle:
+                handle.write('class Partner:\n    _inherit = "res.partner"\n    name = fields.Char()\n    def write(self, vals):\n        pass\n')
+            field = open_in_vscode.declarations({
+                'action': 'locate_field', 'model': 'res.partner', 'field': 'name',
+                'roots': [directory],
+            })
+            method = open_in_vscode.declarations({
+                'action': 'locate_method', 'model': 'res.partner', 'method': 'write',
+                'roots': [directory],
+            })
+            self.assertEqual(field['locations'][0]['line'], 3)
+            self.assertEqual(method['overrides'][0]['line'], 4)
+            self.assertEqual(field['locations'][0]['file'], source)
+
     def test_protocol_and_validation(self):
         with tempfile.NamedTemporaryFile() as source:
             message = {'action': 'open', 'file': source.name, 'line': 22}

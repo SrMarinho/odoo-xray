@@ -6,7 +6,7 @@
     'category': 'Tools',
     'license': 'LGPL-3',
     'depends': ['web'],
-    'auto_install': True,
+    'auto_install': False,
     'data': [],
     'assets': {
         'web.assets_backend': [

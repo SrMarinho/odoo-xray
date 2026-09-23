@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 import json
+import ast
 import os
+from pathlib import Path
 import shutil
 import struct
 import subprocess
@@ -8,6 +10,78 @@ import sys
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import quote
+
+
+def declarations(message):
+    """Find declarations in configured host source trees without importing Odoo."""
+    model = message.get('model')
+    action = message.get('action')
+    symbol = message.get('field') if action == 'locate_field' else message.get('method')
+    roots = message.get('roots')
+    if (action not in ('locate_field', 'locate_method') or
+            not isinstance(model, str) or not isinstance(symbol, str) or
+            not isinstance(roots, list) or len(roots) > 12 or
+            not model or not symbol or
+            any(not (part.replace('_', '').isalnum()) for part in model.split('.')) or
+            not symbol.isidentifier()):
+        raise ValueError('consulta de origem inválida')
+    locations = []
+    for root in roots:
+        if not isinstance(root, str) or not os.path.isabs(root):
+            continue
+        base = Path(root).resolve()
+        if not base.is_dir():
+            continue
+        for directory, dirs, files in os.walk(base):
+            dirs[:] = [name for name in dirs if name not in ('.git', 'node_modules', '.venv', 'venv', '__pycache__')]
+            for filename in files:
+                if not filename.endswith('.py'):
+                    continue
+                path = Path(directory, filename)
+                try:
+                    if path.stat().st_size > 1024 * 1024:
+                        continue
+                    tree = ast.parse(path.read_text(encoding='utf-8'))
+                except (OSError, UnicodeError, SyntaxError):
+                    continue
+                for klass in tree.body:
+                    if not isinstance(klass, ast.ClassDef):
+                        continue
+                    model_names = []
+                    declared_name = None
+                    for node in klass.body:
+                        if isinstance(node, (ast.Assign, ast.AnnAssign)):
+                            names = [target.id for target in node.targets if isinstance(target, ast.Name)] if isinstance(node, ast.Assign) else [node.target.id] if isinstance(node.target, ast.Name) else []
+                            if any(name in ('_name', '_inherit') for name in names):
+                                value = node.value
+                                if isinstance(value, ast.Constant) and isinstance(value.value, str):
+                                    model_names.append(value.value)
+                                    if '_name' in names:
+                                        declared_name = value.value
+                                elif isinstance(value, (ast.List, ast.Tuple)):
+                                    model_names.extend(item.value for item in value.elts if isinstance(item, ast.Constant) and isinstance(item.value, str))
+                    if model not in model_names or (declared_name and declared_name != model):
+                        continue
+                    for node in klass.body:
+                        if action == 'locate_method' and isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == symbol:
+                            locations.append({'file': str(path), 'line': node.lineno, 'klass': klass.name, 'module': path.parent.parent.name, 'host': True})
+                        if action == 'locate_field' and isinstance(node, (ast.Assign, ast.AnnAssign)):
+                            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+                            value = node.value
+                            is_odoo_field = (isinstance(value, ast.Call) and
+                                             isinstance(value.func, ast.Attribute) and
+                                             isinstance(value.func.value, ast.Name) and
+                                             value.func.value.id == 'fields')
+                            if is_odoo_field and any(isinstance(target, ast.Name) and target.id == symbol for target in targets):
+                                locations.append({'file': str(path), 'line': node.lineno, 'klass': klass.name, 'module': path.parent.parent.name, 'host': True})
+    return {'locations': locations} if action == 'locate_field' else {'overrides': locations}
+
+
+def handle_request(message):
+    if message.get('action') in ('locate_field', 'locate_method'):
+        return declarations(message)
+    file_path, line = validate_request(message)
+    return {'ok': True, 'command': open_editor(file_path, line)}
 
 
 def read_message(stream):
@@ -119,9 +193,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
             if length < 1 or length > 64 * 1024:
                 raise ValueError('tamanho de pedido inválido')
             message = json.loads(self.rfile.read(length).decode('utf-8'))
-            file_path, line = validate_request(message)
-            open_editor(file_path, line)
-            self.send_json(200, {'ok': True})
+            self.send_json(200, {'ok': True, **handle_request(message)})
         except Exception as error:
             self.send_json(400, {'ok': False, 'error': str(error)})
 
@@ -138,9 +210,7 @@ def serve(extension_ids):
 def main():
     try:
         message = read_message(sys.stdin.buffer)
-        file_path, line = validate_request(message)
-        command = open_editor(file_path, line)
-        response = {'ok': True, 'command': command}
+        response = {'ok': True, **handle_request(message)}
     except Exception as error:
         response = {'ok': False, 'error': str(error)}
     write_message(sys.stdout.buffer, response)

@@ -199,7 +199,7 @@ function xrayRenderBasic(info, anchor) {
   } else {
     xrayText(box, 'div', info.model, 'xray-row xray-muted');
   }
-  if (info.viewId && info.identity) {
+  if (info.model && (info.identity || info.field || info.tag === 'button')) {
     const button = xrayText(box, 'button', 'Ver origem na view', 'xray-view-button');
     button.addEventListener('click', () => xrayShowViewPanel(info));
   }
@@ -223,7 +223,8 @@ function xrayRenderLocations(info, res) {
     return;
   }
   if (!res.locations || !res.locations.length) {
-    loadingRow.textContent = 'módulos: ' + (res.modules || []).join(', ') + ' — linha não localizada';
+    loadingRow.textContent = res.warning ? 'Fonte local indisponível: ' + res.warning :
+      'Nenhuma declaração Python encontrada nos diretórios mapeados.';
     loadingRow.className = 'xray-row xray-muted';
     return;
   }
@@ -232,7 +233,7 @@ function xrayRenderLocations(info, res) {
   const title = box.querySelector('.xray-title');
   let titleLinked = false;
   res.locations.forEach((loc, idx) => {
-    const rewritten = xrayRewritePath(loc.file);
+    const rewritten = loc.host ? { host: loc.file, core: false } : xrayRewritePath(loc.file);
     const row = document.createElement('div');
     row.className = 'xray-row xray-loc' + (rewritten.host ? ' xray-clickable' : '');
     const label = (idx === 0 ? '▶ ' : '  ') + loc.module + ' — ' + loc.klass + ':' + loc.line;
@@ -259,6 +260,7 @@ function xrayRenderLocations(info, res) {
     rel.textContent = 'related: ' + res.related;
     box.appendChild(rel);
   }
+  if (res.warning) xrayText(box, 'div', 'Fonte local: ' + res.warning, 'xray-row xray-muted');
 }
 
 // e.altKey vem no próprio evento de mousemove, atualizado a cada disparo —
@@ -280,12 +282,13 @@ document.addEventListener('mousemove', (e) => {
     return;
   }
   const target = e.target;
-  xrayHoverTimer = setTimeout(() => {
+  xrayHoverTimer = setTimeout(async () => {
     const info = xrayExtract(target);
     if (!info) {
       xrayHide();
       return;
     }
+    info.model = await xrayResolveModel(info.model);
     const anchor = info.node?.matches('[data-xray-model]') ? info.node :
       target.closest('.o_field_widget, .o_form_label, [data-tooltip-info]') || info.node;
     clearTimeout(xrayHideTimer);
@@ -359,7 +362,7 @@ function xraySourceLink(parent, source) {
     return;
   }
   const link = xrayText(parent, 'div', source.file + ':' + source.line);
-  const mapped = xrayRewritePath(source.file);
+  const mapped = source.host ? { host: source.file } : xrayRewritePath(source.file);
   if (mapped.host) xrayMakeEditorLink(link, mapped.host, source.line);
   else xrayText(parent, 'div', 'Configure o mapeamento deste caminho nas opções.', 'muted');
 }
@@ -380,6 +383,10 @@ async function xrayShowViewPanel(info) {
   if (request !== xrayPanelRequest) return;
   body.replaceChildren();
   if (result.error) { xrayText(body, 'p', result.error, 'error'); return; }
+  if (result.views) {
+    xrayRenderStandardViews(body, result.views, info);
+    return;
+  }
   xrayText(body, 'p', result.view.xml_id || result.view.name);
   xrayText(body, 'pre', result.target.path, 'muted');
   if (result.breadcrumbs?.length) {
@@ -435,13 +442,49 @@ async function xrayShowViewPanel(info) {
   }
 }
 
+function xrayRenderStandardViews(body, views, info) {
+  xrayText(body, 'p', 'Views do modelo lidas pelas APIs padrão do Odoo. A aplicação exata de cada operação de herança não é exposta pela API.', 'muted');
+  const symbol = info.name || info.field;
+  const candidates = views.filter((view) => {
+    if (!symbol) return true;
+    const xml = view.arch_db || '';
+    return xml.includes('name="' + symbol + '"') || xml.includes("name='" + symbol + "'") ||
+      xml.includes('@name=&quot;' + symbol + '&quot;');
+  });
+  xrayText(body, 'h3', 'Views que mencionam ' + (symbol || info.model));
+  if (!candidates.length) xrayText(body, 'p', 'Nenhuma definição correspondente encontrada nas views acessíveis.', 'muted');
+  for (const view of candidates) {
+    const entry = xrayText(body, 'div', '', 'entry');
+    xrayText(entry, 'strong', view.key || view.name);
+    xrayText(entry, 'div', 'ID ' + view.id + ' · prioridade ' + view.priority +
+      (view.inherit_id ? ' · herda ID ' + view.inherit_id[0] : ' · view base'), 'muted');
+    if (view.arch_fs) xrayText(entry, 'div', 'Arquivo declarado: ' + view.arch_fs, 'muted');
+    const snippet = (view.arch_db || '').split('\n').find((line) => symbol && line.includes(symbol));
+    if (snippet) xrayText(entry, 'pre', snippet.trim());
+  }
+  if (info.tag === 'button' && info.name) {
+    const methodBody = xrayText(body, 'div', 'Buscando método Python…', 'muted');
+    xrayLocateMethod(info.model, info.name).then((result) => {
+      methodBody.replaceChildren();
+      for (const location of result.overrides || []) {
+        const entry = xrayText(methodBody, 'div', '', 'entry');
+        xrayText(entry, 'strong', location.module + ' — ' + location.klass);
+        xraySourceLink(entry, location);
+      }
+    });
+  }
+}
+
 document.addEventListener('click', (event) => {
   if (!xrayEnabled || !event.altKey) return;
   if ((xrayTooltipEl && event.target === xrayTooltipEl.host) ||
       (xrayPanel && event.target === xrayPanel.host)) return;
   const info = xrayExtract(event.target);
-  if (!info?.viewId || !info.identity) return;
+  if (!info?.model || !(info.identity || info.field || info.tag === 'button')) return;
   event.preventDefault();
   event.stopImmediatePropagation();
-  xrayShowViewPanel(info);
+  xrayResolveModel(info.model).then((model) => {
+    info.model = model;
+    xrayShowViewPanel(info);
+  });
 }, true);
