@@ -48,9 +48,15 @@ apontar pra `extension/`.
 
 ### Firefox (Linux)
 
-Use Firefox 140 ou mais recente. Em `about:debugging#/runtime/this-firefox`,
-clique em **Carregar extensão temporária** e selecione `extension/manifest.json`.
-O mesmo diretório atende Firefox e Chromium; não é necessário copiar os scripts.
+Use Firefox 140 ou mais recente. Gere o diretório próprio do Firefox:
+
+```sh
+python3 tools/build_firefox.py
+```
+
+Em `about:debugging#/runtime/this-firefox`, clique em **Carregar extensão
+temporária** e selecione `dist/firefox/manifest.json`. A pasta `extension/`
+é para Brave/Chrome. Repita o build após atualizar os arquivos do projeto.
 Em `about:addons`, abra as preferências do Odoo X-Ray para configurar os
 mapeamentos container → host. Autorize o acesso ao site do Odoo se o Firefox
 solicitar essa permissão.
@@ -74,8 +80,8 @@ da Mozilla. O projeto ainda não está publicado no catálogo de extensões.
 Validação e empacotamento local:
 
 ```sh
-npx web-ext lint --source-dir extension
-npx web-ext build --source-dir extension --artifacts-dir /tmp/odoo-xray-firefox
+npx web-ext lint --source-dir dist/firefox
+npx web-ext build --source-dir dist/firefox --artifacts-dir /tmp/odoo-xray-firefox
 ```
 
 O ZIP gerado é um pacote sem assinatura; o build não publica a extensão.
