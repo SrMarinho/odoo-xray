@@ -41,6 +41,42 @@ docker exec <container> odoo -d <db_teste> -i xray --test-enable --test-tags /xr
 `chrome://extensions` → modo desenvolvedor → "carregar sem compactação" →
 apontar pra `extension/`.
 
+### Firefox (Linux)
+
+Use Firefox 140 ou mais recente. Em `about:debugging#/runtime/this-firefox`,
+clique em **Carregar extensão temporária** e selecione `extension/manifest.json`.
+O mesmo diretório atende Firefox e Chromium; não é necessário copiar os scripts.
+Em `about:addons`, abra as preferências do Odoo X-Ray para configurar os
+mapeamentos container → host. Autorize o acesso ao site do Odoo se o Firefox
+solicitar essa permissão.
+
+Para habilitar o fallback que abre o arquivo e a linha no VS Code:
+
+```sh
+python3 native/install-firefox.py
+```
+
+Esse instalador registra `com.odoo_xray.editor` para o ID fixo
+`odoo-xray@srmarinho`, preservando os registros do Chrome/Brave. Destina-se ao
+Firefox instalado diretamente no Linux; Firefox em Flatpak/Snap pode precisar
+de integração adicional com o host. O protocolo `vscode://` continua sendo
+tentado primeiro.
+
+A instalação temporária é removida ao reiniciar o Firefox. Para distribuir
+uma instalação permanente no Firefox padrão, o pacote precisa de assinatura
+da Mozilla. O projeto ainda não está publicado no catálogo de extensões.
+
+Validação e empacotamento local:
+
+```sh
+npx web-ext lint --source-dir extension
+npx web-ext build --source-dir extension --artifacts-dir /tmp/odoo-xray-firefox
+```
+
+O ZIP gerado é um pacote sem assinatura; o build não publica a extensão.
+
+### Configuração e uso
+
 Nas opções: mapear os paths de container do Odoo (ex. `/mnt/odoo-cotacao`)
 pros paths reais no seu disco, e o template do editor
 (`vscode://file/{file}:{line}` por padrão).

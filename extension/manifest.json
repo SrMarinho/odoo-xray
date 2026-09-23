@@ -6,7 +6,15 @@
   "permissions": ["storage", "nativeMessaging"],
   "host_permissions": ["http://127.0.0.1:17654/*"],
   "background": {
-    "service_worker": "src/background.js"
+    "service_worker": "src/background.js",
+    "scripts": ["src/background.js"]
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "odoo-xray@srmarinho",
+      "strict_min_version": "140.0",
+      "data_collection_permissions": { "required": ["none"] }
+    }
   },
   "content_scripts": [
     {

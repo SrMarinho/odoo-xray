@@ -8,11 +8,16 @@ function renderMappings() {
     div.className = 'pair';
     div.style.display = 'flex';
     div.style.gap = '8px';
-    div.innerHTML =
-      '<code style="flex:1">' + m.container + '</code>' +
-      '<code style="flex:1">' + m.host + '</code>' +
-      '<button data-i="' + i + '">remover</button>';
-    div.querySelector('button').addEventListener('click', () => {
+    for (const value of [m.container, m.host]) {
+      const code = document.createElement('code');
+      code.style.flex = '1';
+      code.textContent = value;
+      div.appendChild(code);
+    }
+    const remove = document.createElement('button');
+    remove.textContent = 'remover';
+    div.appendChild(remove);
+    remove.addEventListener('click', () => {
       mappings.splice(i, 1);
       renderMappings();
     });
