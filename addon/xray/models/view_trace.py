@@ -14,6 +14,8 @@ from odoo.tools.template_inheritance import locate_node
 
 _TRACE = ContextVar('xray_view_trace', default=None)
 
+_NON_RENDERED_TAGS = {'data', 'xpath', 'attribute'}
+
 
 def elements(tree):
     return [node for node in tree.iter() if isinstance(node.tag, str)]
@@ -32,6 +34,30 @@ def fingerprint(arch):
             if name.startswith('data-xray-') or name == '__validate__':
                 del node.attrib[name]
     return hashlib.sha256(etree.tostring(clean, method='c14n')).hexdigest()
+
+
+def inspectable(node):
+    return isinstance(node.tag, str) and node.tag not in _NON_RENDERED_TAGS
+
+
+def node_identity(node, tree, digest, model, view, context, mobile):
+    return {
+        'path': tree.getpath(node),
+        'fingerprint': digest,
+        'model': model,
+        'tag': node.tag,
+        'name': node.get('name'),
+        'label': node.get('string'),
+        'field': node.get('name') if node.tag == 'field' else None,
+        'view_type': view.type,
+        'context': context,
+        'mobile': mobile,
+    }
+
+
+def public_attributes(node):
+    return {name: value for name, value in node.attrib.items()
+            if not name.startswith('data-xray-') and name != '__validate__'}
 
 
 class ViewSource:
@@ -228,12 +254,10 @@ class XrayBase(models.AbstractModel):
             context = {k: v for k, v in self.env.context.items()
                        if k == 'lang' or k.endswith('_view_ref')}
             for node in elements(arch):
-                if node.tag != 'field':
+                if not inspectable(node):
                     continue
-                identity = {'path': tree.getpath(node), 'fingerprint': digest,
-                            'model': self._name, 'field': node.get('name'),
-                            'view_type': view.type, 'context': context,
-                            'mobile': bool(options.get('mobile'))}
+                identity = node_identity(node, tree, digest, self._name, view, context,
+                                         bool(options.get('mobile')))
                 node.set('data-xray-view-id', str(view.id))
                 node.set('data-xray-node', json.dumps(identity, separators=(',', ':')))
         return super()._get_view_postprocessed(view, arch, **options)
@@ -274,7 +298,9 @@ def inspect_view_node(env, view_id, identity):
     # Compare generated paths instead of evaluating an arbitrary client XPath.
     tree = arch.getroottree()
     node = next((n for n in elements(arch) if tree.getpath(n) == identity.get('path')), None)
-    if node is None or node.tag != 'field' or node.get('name') != identity.get('field'):
+    expected_name = identity.get('name', identity.get('field'))
+    if (node is None or not inspectable(node) or node.tag != identity.get('tag', 'field')
+            or node.get('name') != expected_name):
         return {'error': 'Elemento não encontrado nesta versão da view.'}
     history = list(trace.histories.get(node, []))
     # A move/attribute change on a containing group affects its descendants too.
@@ -283,8 +309,26 @@ def inspect_view_node(env, view_id, identity):
                        for event in trace.histories.get(ancestor, [])
                        if event['operation'] in ('move', 'attributes', 'replace'))
     history.sort(key=lambda event: event['sequence'])
+    breadcrumbs = []
+    lineage = list(reversed(list(node.iterancestors()))) + [node]
+    digest = identity['fingerprint']
+    for item in lineage:
+        if not inspectable(item):
+            continue
+        item_identity = node_identity(item, tree, digest, model, resolved, context,
+                                      bool(identity.get('mobile')))
+        breadcrumbs.append({
+            'tag': item.tag,
+            'name': item.get('name'),
+            'label': item.get('string'),
+            'path': item_identity['path'],
+            'identity': item_identity,
+        })
     return {'view': trace.source(resolved).info,
-            'target': {'field': node.get('name'), 'path': identity['path'],
-                       'attributes': dict(node.attrib)},
+            'target': {'tag': node.tag, 'name': node.get('name'),
+                       'label': node.get('string'),
+                       'field': node.get('name') if node.tag == 'field' else None,
+                       'path': identity['path'], 'attributes': public_attributes(node)},
             'history': history, 'inheritance_chain': trace.chain,
+            'breadcrumbs': breadcrumbs,
             'warning': None if history else 'Elemento criado ou substituído por código Python; origem XML indisponível.'}

@@ -25,12 +25,54 @@ class TestViewProvenance(TransactionCase):
             'inherit_id': (parent or self.base).id, 'priority': priority, 'arch_db': arch,
         })
 
-    def inspect(self, field='name', occurrence=0):
+    def inspect(self, field='name', occurrence=0, xpath=None):
         result = self.env['res.partner'].get_view(self.base.id, 'form')
         root = etree.fromstring(result['arch'].encode())
-        node = root.xpath('//field[@name=$name]', name=field)[occurrence]
+        nodes = root.xpath(xpath) if xpath else root.xpath('//field[@name=$name]', name=field)
+        node = nodes[occurrence]
         identity = json.loads(node.get('data-xray-node'))
         return self.xray.locate_view_node(int(node.get('data-xray-view-id')), identity)
+
+    def test_rendered_nodes_and_breadcrumbs_are_inspectable(self):
+        self.base.arch_db = '''<form string="Partner"><sheet><notebook>
+            <page name="details" string="Details"><group name="left">
+                <h1 class="title">Heading</h1>
+                <field name="name"/>
+                <button name="action_archive" type="object" string="Archive"/>
+                <separator string="Contact"/>
+            </group></page>
+        </notebook></sheet></form>'''
+        for xpath, tag, name in [
+            ('//group', 'group', 'left'), ('//page', 'page', 'details'),
+            ('//h1', 'h1', None), ('//button', 'button', 'action_archive'),
+            ('//separator', 'separator', None),
+        ]:
+            result = self.inspect(xpath=xpath)
+            self.assertNotIn('error', result)
+            self.assertEqual(result['target']['tag'], tag)
+            self.assertEqual(result['target']['name'], name)
+            self.assertNotIn('data-xray-node', result['target']['attributes'])
+        button = self.inspect(xpath='//button')
+        self.assertEqual([item['tag'] for item in button['breadcrumbs']],
+                         ['form', 'sheet', 'notebook', 'page', 'group', 'button'])
+        self.assertTrue(all(item['identity']['fingerprint'] for item in button['breadcrumbs']))
+
+    def test_identity_tag_and_name_are_validated(self):
+        result = self.env['res.partner'].get_view(self.base.id, 'form')
+        root = etree.fromstring(result['arch'].encode())
+        node = root.xpath('//field[@name="name"]')[0]
+        identity = json.loads(node.get('data-xray-node'))
+        identity['tag'] = 'button'
+        self.assertIn('error', self.xray.locate_view_node(self.base.id, identity))
+        identity['tag'] = 'field'
+        identity['name'] = 'email'
+        self.assertIn('error', self.xray.locate_view_node(self.base.id, identity))
+
+    def test_method_overrides_are_available_for_object_buttons(self):
+        result = self.xray.locate_method('res.partner', 'write')
+        self.assertEqual(result['model'], 'res.partner')
+        self.assertEqual(result['method'], 'write')
+        self.assertTrue(result['overrides'])
 
     def test_no_debug_and_access_cache(self):
         self.assertTrue(self.xray.capabilities()['without_debug'])
