@@ -5,6 +5,7 @@ const vm = require('node:vm');
 
 let listener;
 let nativeRequest;
+let storageSettings = { projectRoots: ['/tmp/project'] };
 const context = vm.createContext({
   URL,
   JSON,
@@ -14,7 +15,7 @@ const context = vm.createContext({
   },
   fetch: async () => { throw new Error('bridge should not be needed'); },
   chrome: {
-    storage: { sync: { get(_keys, callback) { callback({ mappings: [{ host: '/tmp/project' }] }); } } },
+    storage: { sync: { get(_keys, callback) { callback(storageSettings); } } },
     runtime: {
       id: 'extension-id',
       lastError: null,
@@ -24,6 +25,9 @@ const context = vm.createContext({
         callback({ ok: true });
       },
     },
+  },
+  importScripts(file) {
+    vm.runInContext(fs.readFileSync(path.join(__dirname, file), 'utf8'), context);
   },
 });
 
@@ -47,6 +51,16 @@ assert.equal(listener(
 assert.equal(nativeRequest.action, 'locate_field');
 assert.equal(JSON.stringify(nativeRequest.roots), JSON.stringify(['/tmp/project']));
 assert.equal(response.ok, true);
+
+storageSettings = { mappings: [{ container: '/mnt/project', host: '/tmp/legacy-project' }] };
+listener(
+  { type: 'xray.localRequest', request: { action: 'resolve_file', file: '/mnt/project/models/x.py' } },
+  { id: 'extension-id', tab: { url: 'http://localhost:8069/odoo/res.partner/1' } },
+  value => { response = value; },
+);
+assert.equal(nativeRequest.action, 'resolve_file');
+assert.equal(JSON.stringify(nativeRequest.roots), JSON.stringify(['/tmp/legacy-project']));
+storageSettings = { projectRoots: ['/tmp/project'], mappings: [{ host: '/tmp/ignored' }] };
 
 response = null;
 assert.equal(listener(

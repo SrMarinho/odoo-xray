@@ -23,7 +23,7 @@
     },
     {
       "matches": ["http://*/odoo/*", "http://*/web*", "https://*/odoo/*", "https://*/web*"],
-      "js": ["src/settings.js", "src/rpc.js", "src/compose.js", "src/extract.js", "src/content.js"],
+      "js": ["src/core.js", "src/settings.js", "src/rpc.js", "src/compose.js", "src/extract.js", "src/content.js"],
       "run_at": "document_idle"
     }
   ],

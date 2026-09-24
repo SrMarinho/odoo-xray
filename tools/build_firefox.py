@@ -14,7 +14,7 @@ DEFAULT_DESTINATION = ROOT / 'dist/firefox'
 def build(destination=DEFAULT_DESTINATION):
     destination = Path(destination)
     destination.mkdir(parents=True, exist_ok=True)
-    for relative in ('src/background.js', 'src/content.js', 'src/extract.js',
+    for relative in ('src/core.js', 'src/background.js', 'src/content.js', 'src/extract.js',
                      'src/rpc.js', 'src/hook.js', 'src/compose.js', 'src/settings.js',
                      'options/options.html', 'options/options.js', 'ui.css'):
         target = destination / relative
@@ -23,7 +23,7 @@ def build(destination=DEFAULT_DESTINATION):
     shutil.copytree(SOURCE / 'themes', destination / 'themes', dirs_exist_ok=True)
 
     manifest = json.loads((SOURCE / 'manifest.json').read_text())
-    manifest['background'] = {'scripts': [manifest['background']['service_worker']]}
+    manifest['background'] = {'scripts': ['src/core.js', manifest['background']['service_worker']]}
     manifest['browser_specific_settings'] = {'gecko': {
         'id': 'odoo-xray@srmarinho',
         'strict_min_version': '140.0',

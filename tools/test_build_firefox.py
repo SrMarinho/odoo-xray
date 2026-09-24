@@ -12,11 +12,12 @@ class BrowserManifestsTest(unittest.TestCase):
         self.assertEqual(chromium['background'], {'service_worker': 'src/background.js'})
         with tempfile.TemporaryDirectory() as directory:
             firefox = json.loads((build(directory) / 'manifest.json').read_text())
-            self.assertEqual(firefox['background'], {'scripts': ['src/background.js']})
+            self.assertEqual(firefox['background'], {'scripts': ['src/core.js', 'src/background.js']})
             self.assertEqual(firefox['browser_specific_settings']['gecko']['id'],
                              'odoo-xray@srmarinho')
             self.assertEqual(firefox['content_scripts'], chromium['content_scripts'])
             self.assertTrue((Path(directory) / 'src/background.js').is_file())
+            self.assertTrue((Path(directory) / 'src/core.js').is_file())
             self.assertTrue((Path(directory) / 'src/settings.js').is_file())
             self.assertTrue((Path(directory) / 'ui.css').is_file())
             self.assertTrue((Path(directory) / 'themes/themes.json').is_file())

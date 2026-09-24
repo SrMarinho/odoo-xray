@@ -4,6 +4,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 
 const context = vm.createContext({});
+vm.runInContext(fs.readFileSync(path.join(__dirname, 'core.js'), 'utf8'), context);
 vm.runInContext(fs.readFileSync(path.join(__dirname, 'settings.js'), 'utf8'), context);
 const { xrayNormalizeSettings } = context;
 
