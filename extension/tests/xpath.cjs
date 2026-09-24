@@ -64,10 +64,33 @@ const { chromium } = require('playwright');
       window.xrayLocateView = async () => window.fixture;
       window.xrayLocateViewSource = async () => ({ error: 'No local host' });
     });
+    await page.addScriptTag({ path: path.join(__dirname, '../src/core.js') });
+    await page.addScriptTag({ path: path.join(__dirname, '../src/settings.js') });
     await page.addScriptTag({ path: path.join(__dirname, '../src/content.js') });
+    assert.equal(await page.evaluate(() => {
+      xrayActivationMode = 'shortcut';
+      xrayActivationModifiers = ['ctrl', 'shift'];
+      return xrayActivationMatches({ ctrlKey: true, shiftKey: true });
+    }), true);
+    assert.equal(await page.evaluate(() => xrayActivationMatches({ ctrlKey: true, shiftKey: false })), false);
+    assert.equal(await page.evaluate(() => {
+      xrayActivationMode = 'always';
+      return xrayActivationMatches({});
+    }), true);
+    await page.evaluate(() => {
+      xrayActivationMode = 'shortcut';
+      xrayActivationModifiers = ['alt'];
+    });
     result = await resolve('<form><field name="email"/></form>');
     const fixture = { ...result, loadedId: 1, target: { tag: 'field', name: 'email' },
       views: { 1: { id: 1, name: 'Contact' } } };
+    assert.deepEqual(await page.evaluate(async () => {
+      window.xrayResolveFile = async () => ({ matches: [{ file: '/home/me/project/views/form.xml' }] });
+      const parent = document.createElement('div');
+      await xraySourceLink(parent, { file: '/mnt/addons/project/views/form.xml', line: 12 });
+      const link = parent.firstElementChild;
+      return { text: link.textContent, role: link.getAttribute('role') };
+    }), { text: '/home/me/project/views/form.xml:12', role: 'link' });
     await page.evaluate(async (fixture) => {
       window.fixture = fixture;
       Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async (text) => { window.copied = text; } } });
@@ -80,7 +103,7 @@ const { chromium } = require('playwright');
     assert.equal(await page.locator('[aria-live]').textContent(), '');
     assert.equal(await page.getByRole('button', { name: 'XPath copiado', exact: true }).count(), 1);
     await page.waitForTimeout(1300);
-    assert.equal(await page.getByRole('button', { name: 'Copiar XPath', exact: true }).textContent(), '');
+    assert.equal(await page.getByRole('button', { name: 'Copiar XPath', exact: true }).textContent(), 'XPath');
     assert.equal(await page.locator('.xpath-copy-icon svg').count(), 1);
     await page.evaluate(() => { window.copied = null; });
     await page.locator('.xpath-expression').click();
@@ -158,8 +181,14 @@ const { chromium } = require('playwright');
       window.xrayLocateViewSource = () => new Promise((resolve) => { window.releaseSource = resolve; });
       window.pendingPanel = xrayShowViewPanel({ model: 'res.partner', field: 'email' });
     }, fixture);
+    await page.getByRole('button', { name: 'Copiar XPath', exact: true }).waitFor();
     assert.equal(await page.getByRole('button', { name: 'Copiar XPath', exact: true }).count(), 1);
     await page.evaluate(async () => { window.releaseSource({ error: 'unavailable' }); await window.pendingPanel; });
+    assert.equal(await page.locator('.xray-statuses').count() > 0, true);
+    assert.equal(await page.locator('#xray-panel-host').evaluate((host) => host.classList.contains('xray-open')), true);
+    await page.getByRole('button', { name: 'Fechar' }).click();
+    assert.equal(await page.locator('#xray-panel-host').evaluate((host) => host.classList.contains('xray-open')), false);
+    await page.locator('#xray-panel-host').waitFor({ state: 'hidden' });
     console.log('xpath.cjs: OK');
   } finally {
     await browser.close();

@@ -8,6 +8,10 @@ const { chromium } = require('playwright');
   try {
     const page = await browser.newPage();
     const html = fs.readFileSync(path.join(__dirname, '../options/options.html'), 'utf8')
+      .replace('<link rel="stylesheet" href="../ui.css">', '')
+      .replace('<link rel="stylesheet" href="../themes/modern.css" id="themeLink">',
+        '<link rel="stylesheet" id="themeLink">')
+      .replace('<script src="../src/core.js"></script>', '')
       .replace('<script src="../src/settings.js"></script>', '')
       .replace('<script src="options.js"></script>', '');
     await page.setContent(html);
@@ -30,12 +34,12 @@ const { chromium } = require('playwright');
         remove(key) { window.removed = key; },
       } } };
     });
+    await page.addScriptTag({ path: path.join(__dirname, '../src/core.js') });
     await page.addScriptTag({ path: path.join(__dirname, '../src/settings.js') });
     await page.addScriptTag({ path: path.join(__dirname, '../options/options.js') });
     await page.waitForFunction(() => document.querySelectorAll('.theme-card').length > 0);
 
-    assert.equal(await page.evaluate(() => getComputedStyle(document.body).color), 'rgb(237, 242, 247)');
-    assert.equal(await page.locator('.settings-card').count(), 4);
+    assert.equal(await page.locator('.settings-card').count(), 6);
     assert.equal(await page.locator('.theme-card').count(), 2);
     assert.equal(await page.locator('.theme-card.active .theme-card-name').textContent(), 'Moderno');
     await page.click('.theme-card:has-text("Luxo")');

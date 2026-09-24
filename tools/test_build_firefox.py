@@ -18,6 +18,7 @@ class BrowserManifestsTest(unittest.TestCase):
             self.assertEqual(firefox['content_scripts'], chromium['content_scripts'])
             self.assertTrue((Path(directory) / 'src/background.js').is_file())
             self.assertTrue((Path(directory) / 'src/core.js').is_file())
+            self.assertTrue((Path(directory) / 'src/interaction.js').is_file())
             self.assertTrue((Path(directory) / 'src/settings.js').is_file())
             self.assertTrue((Path(directory) / 'ui.css').is_file())
             self.assertTrue((Path(directory) / 'themes/themes.json').is_file())

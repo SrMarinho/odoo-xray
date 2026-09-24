@@ -14,7 +14,7 @@ DEFAULT_DESTINATION = ROOT / 'dist/firefox'
 def build(destination=DEFAULT_DESTINATION):
     destination = Path(destination)
     destination.mkdir(parents=True, exist_ok=True)
-    for relative in ('src/core.js', 'src/background.js', 'src/content.js', 'src/extract.js',
+    for relative in ('src/core.js', 'src/background.js', 'src/content.js', 'src/interaction.js', 'src/extract.js',
                      'src/rpc.js', 'src/hook.js', 'src/compose.js', 'src/settings.js',
                      'options/options.html', 'options/options.js', 'ui.css'):
         target = destination / relative

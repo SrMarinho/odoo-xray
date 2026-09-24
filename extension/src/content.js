@@ -142,7 +142,9 @@ function xrayApplySettings(settings) {
 }
 
 chrome.storage.sync.get(Object.keys(XRAY_SETTINGS_DEFAULTS), (v) => {
-  xrayApplySettings(xrayNormalizeSettings(v));
+  // Browser storage is asynchronous in production, while test doubles may
+  // answer synchronously. Deferring keeps initialization after module state.
+  queueMicrotask(() => xrayApplySettings(xrayNormalizeSettings(v)));
 });
 chrome.storage.onChanged.addListener((changes) => {
   const patch = {
@@ -273,6 +275,7 @@ let xrayHideTimer = null;
 let xrayTooltipCloseTimer = null;
 function xrayHide() {
   clearTimeout(xrayHideTimer);
+  xrayHoverInfo = null;
   xrayHideTimer = setTimeout(() => {
     if (xrayTooltipEl) {
       xrayTooltipEl.host.classList.remove('xray-open');
@@ -397,46 +400,10 @@ function xrayRenderLocations(info, res) {
 // Modifier state comes from each mouse event, avoiding stuck keyboard state
 // when focus leaves the page before keyup.
 let xrayHoverTimer = null;
-
-document.addEventListener('mousemove', (e) => {
-  clearTimeout(xrayHoverTimer);
-  // evento retargeted pro shadow host quando o mouse está em cima do próprio
-  // tooltip (o listener está fora da shadow tree) — não conta como "saiu do
-  // campo", senão nunca dá pra alcançar o link pra clicar.
-  if ((xrayTooltipEl && e.target === xrayTooltipEl.host) || (xrayPanel && e.target === xrayPanel.host)) {
-    clearTimeout(xrayHideTimer);
-    return;
-  }
-  if (!xrayEnabled || !xrayActivationMatches(e)) {
-    xrayHide();
-    return;
-  }
-  const target = e.target;
-  xrayHoverTimer = setTimeout(async () => {
-    let info = xrayExtract(target);
-    if (!info) {
-      xrayHide();
-      return;
-    }
-    info = await xrayResolveInspection(info);
-    const anchor = info.column || info.node?.matches('[data-xray-model]') ? info.node :
-      target.closest('.o_field_widget, .o_form_label, [data-tooltip-info]') || info.node;
-    clearTimeout(xrayHideTimer);
-    if (xrayAnchor === anchor && xrayTooltipEl?.host.classList.contains('xray-open')) return;
-    xrayRenderBasic(info, anchor);
-    if (info.field) {
-      if (info.fieldModelError) {
-        xrayRenderLocations(info, { error: info.fieldModelError });
-        return;
-      }
-      xrayLocateField(info.model, info.field).then((res) => {
-        if (xrayAnchor !== anchor) return;
-        xrayRenderLocations(info, res);
-        xrayPositionTooltip();
-      });
-    }
-  }, xrayActivationMode === 'always' ? xrayHoverDelay : XRAY_DEBOUNCE_MS);
-}, { passive: true });
+// No modo shortcut (alt+hover) não existe tooltip intermediário: o hover só
+// destaca o elemento, e o clique nele abre o painel direto com o que já foi
+// resolvido — guardamos aqui pro handler de click não precisar re-extrair.
+let xrayHoverInfo = null;
 
 function xrayText(parent, tag, text, className = '') {
   const el = document.createElement(tag);
@@ -598,7 +565,9 @@ function xrayGetPanel() {
     .muted { color:var(--xray-muted,#9caabd); } .error { padding:10px 12px; border:1px solid var(--xray-error-border,rgba(251,113,133,.35)); border-radius:8px; color:var(--xray-error,#fb7185); background:var(--xray-error-bg,rgba(251,113,133,.08)); }
     .xray-clickable { color:var(--xray-accent,#5eead4); cursor:pointer; transition:color var(--xray-dur-fast,120ms) var(--xray-ease,ease); } .xray-clickable:hover { text-decoration:underline; text-underline-offset:3px; }
     pre { white-space:pre-wrap; overflow-wrap:anywhere; margin:5px 0; font:12px/1.55 var(--xray-mono,monospace); }
-    .xpath-copy-row { display:flex; justify-content:flex-end; margin-top:10px; }
+    .xpath-copy-row { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-top:10px; }
+    .xpath-expression { min-width:0; overflow:hidden; color:var(--xray-accent,#5eead4); text-overflow:ellipsis; white-space:nowrap; cursor:pointer; }
+    .xpath-expression:focus-visible { outline:1px solid var(--xray-accent,#5eead4); outline-offset:3px; border-radius:3px; }
     .xpath-copy-icon { display:inline-flex; align-items:center; justify-content:center; gap:6px; padding:7px 12px; }
     .xray-statuses { display:flex; flex-wrap:wrap; gap:6px; margin:9px 0; }
     .xray-badge { display:inline-flex; align-items:center; min-height:23px; padding:3px 8px; border:1px solid var(--xray-border,#303a48); border-radius:999px; background:var(--xray-entry-bg,rgba(32,40,51,.7)); color:var(--xray-muted,#9caabd); font-size:10px; font-weight:700; letter-spacing:.025em; }
@@ -721,9 +690,13 @@ function xrayRenderXPath(parent, xpath, view, ambiguous = false, legacy = false)
 
   const footer = document.createElement('div');
   const row = xrayText(footer, 'div', '', 'xpath-copy-row');
+  const expression = xrayText(row, 'code', xpath.expression, 'xpath-expression');
+  expression.setAttribute('role', 'button');
+  expression.setAttribute('aria-label', 'Copiar XPath ' + xpath.expression);
+  expression.tabIndex = 0;
   const copy = xrayText(row, 'button', '', 'xpath-copy-icon');
   copy.setAttribute('aria-label', 'Copiar XPath');
-  copy.title = 'Copiar XPath';
+  copy.title = xpath.expression;
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   for (const [name, value] of Object.entries({ width: '16', height: '16', viewBox: '0 0 24 24',
     fill: 'none', stroke: 'currentColor', 'stroke-width': '1.8', 'aria-hidden': 'true', focusable: 'false' })) {
@@ -741,7 +714,7 @@ function xrayRenderXPath(parent, xpath, view, ambiguous = false, legacy = false)
     clearTimeout(feedbackTimer);
     copyLabel.textContent = 'XPath';
     copy.setAttribute('aria-label', 'Copiar XPath');
-    copy.title = 'Copiar XPath';
+    copy.title = xpath.expression;
   };
   const copyXPath = async () => {
     const copied = await xrayCopyXPath(xpath.expression, parent);
@@ -754,10 +727,16 @@ function xrayRenderXPath(parent, xpath, view, ambiguous = false, legacy = false)
       feedbackTimer = setTimeout(showCopyIcon, 1200);
     } else {
       showCopyIcon();
-      status.textContent = ' Não foi possível copiar.';
+      status.textContent = ' Não foi possível copiar; copie o XPath manualmente.';
     }
   };
   copy.addEventListener('click', copyXPath);
+  expression.addEventListener('click', copyXPath);
+  expression.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    copyXPath();
+  });
   return footer;
 }
 
@@ -914,6 +893,7 @@ function xrayRenderLocation(parent, resolved, index) {
 async function xrayRenderCandidate(parent, result, candidate, request, heading) {
   const xpathFooter = result.target.tag === 'field' ? xrayRenderXPath(parent, candidate.xpath,
     result.views[result.loadedId], result.certainty === 'ambígua') : null;
+  if (xpathFooter) parent.appendChild(xpathFooter);
   const created = candidate.created;
   const view = created ? result.views[created.viewId] : null;
   const module = view?.xml_id ? view.xml_id.split('.', 1)[0] : null;
@@ -951,7 +931,6 @@ async function xrayRenderCandidate(parent, result, candidate, request, heading) 
       xrayRenderLocation(entry, eventResolved, event.index);
     }
   }
-  if (xpathFooter) parent.appendChild(xpathFooter);
 }
 
 async function xrayRenderOrigin(body, result, request) {
@@ -996,14 +975,3 @@ async function xrayRenderMethod(body, result, request) {
     }
   }
 }
-
-document.addEventListener('click', (event) => {
-  if (!xrayEnabled || xrayActivationMode === 'always' || !xrayActivationMatches(event)) return;
-  if ((xrayTooltipEl && event.target === xrayTooltipEl.host) ||
-      (xrayPanel && event.target === xrayPanel.host)) return;
-  const info = xrayExtract(event.target);
-  if (!info?.model || !(info.identity || info.field || info.tag)) return;
-  event.preventDefault();
-  event.stopImmediatePropagation();
-  xrayResolveInspection(info).then(xrayShowViewPanel);
-}, true);

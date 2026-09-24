@@ -27,7 +27,7 @@ if (!url || !db?.startsWith('xray_test_')) throw new Error('Use XRAY_TEST_URL an
     await page.addInitScript(() => {
       window.chrome = window.chrome || {};
       chrome.storage = {
-        sync: { get: (_keys, callback) => callback({ enabled: true, mappings: [{ container: '/usr/lib/python3/dist-packages', host: '/mapped' }] }) },
+        sync: { get: (_keys, callback) => callback({ enabled: true, projectRoots: ['/mapped'] }) },
         onChanged: { addListener: () => {} },
       };
       chrome.runtime = { sendMessage: (message, callback) => callback(message.type === 'xray.localRequest'
@@ -45,7 +45,7 @@ if (!url || !db?.startsWith('xray_test_')) throw new Error('Use XRAY_TEST_URL an
     await page.evaluate(() => document.querySelectorAll('*').forEach(node =>
       [...node.attributes].filter(attr => attr.name.startsWith('data-xray-'))
         .forEach(attr => node.removeAttribute(attr.name))));
-    for (const file of ['rpc.js', 'compose.js', 'extract.js', 'content.js']) {
+    for (const file of ['core.js', 'settings.js', 'rpc.js', 'compose.js', 'extract.js', 'content.js', 'interaction.js']) {
       await page.addScriptTag({ path: path.join(__dirname, '../src', file) });
     }
     await page.keyboard.down('Alt');
@@ -72,6 +72,7 @@ if (!url || !db?.startsWith('xray_test_')) throw new Error('Use XRAY_TEST_URL an
     await page.mouse.wheel(0, 400);
     assert.equal(await panel.isVisible(), true);
     await panel.getByRole('button', { name: 'Fechar' }).click();
+    await panel.waitFor({ state: 'hidden' });
     assert.equal(await panel.isVisible(), false);
     const cancelled = await field.evaluate(node => !node.dispatchEvent(new MouseEvent('click', {
       bubbles: true, cancelable: true, altKey: true,
