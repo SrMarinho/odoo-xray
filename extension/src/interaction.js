@@ -35,10 +35,7 @@ class XrayInteractionController {
       target.closest('.o_field_widget, .o_form_label, [data-tooltip-info]') || info.node;
     clearTimeout(xrayHideTimer);
     if (xrayActivationMode === 'shortcut') {
-      xrayAnchor = anchor;
       xrayHoverInfo = info.model && (info.identity || info.field || info.tag) ? info : null;
-      xrayShowHighlight(anchor);
-      return;
     }
     if (xrayAnchor === anchor && xrayTooltipEl?.host.classList.contains('xray-open')) return;
     xrayRenderBasic(info, anchor);
@@ -52,9 +49,11 @@ class XrayInteractionController {
 
   onShortcutClick(event) {
     if (!xrayEnabled || xrayActivationMode !== 'shortcut' || !xrayActivationMatches(event)) return;
+    if ((xrayTooltipEl && event.target === xrayTooltipEl.host) ||
+        (xrayPanel && event.target === xrayPanel.host)) return;
     if (!xrayHoverInfo || !xrayAnchor?.isConnected) return;
     event.preventDefault();
-    event.stopPropagation();
+    event.stopImmediatePropagation();
     xrayShowViewPanel(xrayHoverInfo);
   }
 
@@ -70,4 +69,5 @@ class XrayInteractionController {
   }
 }
 
-new XrayInteractionController().start();
+const xrayInteractionController = new XrayInteractionController();
+xrayInteractionController.start();
