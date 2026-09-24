@@ -82,7 +82,9 @@ OdooXray.RequestValidator = class RequestValidator {
 OdooXray.LocalGateway = class LocalGateway {
   constructor(runtime, fetchImpl, options = {}) {
     this.runtime = runtime;
-    this.fetch = fetchImpl;
+    // Browser fetch requires the WorkerGlobalScope receiver. Binding it here
+    // prevents `this.fetch(...)` from using the gateway instance as `this`.
+    this.fetch = fetchImpl.bind(globalThis);
     this.nativeHost = options.nativeHost || 'com.odoo_xray.editor';
     this.bridgeUrl = options.bridgeUrl || 'http://127.0.0.1:17654/open';
   }
