@@ -1,12 +1,14 @@
 # Odoo X-Ray
 
-Extensão Chrome/Firefox para Odoo 19: Alt+hover destaca campos renderizados
-e mostra sua origem. Alt+click abre o inspetor sem executar a ação do Odoo.
+Extensão Chrome/Firefox para Odoo 19: um atalho configurável + hover destaca
+campos renderizados e mostra sua origem. O mesmo atalho + clique abre o
+inspetor sem executar a ação do Odoo. Também há um modo sempre ativo, com
+atraso configurável antes de mostrar o tooltip.
 Links de arquivo abrem no VS Code na linha correta. O fluxo principal usa as
 APIs padrão do Odoo e uma ponte local; nenhum módulo X-Ray precisa ser
 instalado no banco ou injetado no projeto Odoo.
 
-O host local lê os arquivos Python e XML nos diretórios configurados em
+O host local lê os arquivos Python e XML nas pastas de projetos configuradas em
 Options e encontra declarações de campo, método e view por análise de
 sintaxe. A extensão consulta `fields_get`, `get_views` e `ir.ui.view` pela
 sessão do navegador e recompõe a herança da view no próprio navegador
@@ -57,8 +59,8 @@ python3 tools/build_firefox.py
 Em `about:debugging#/runtime/this-firefox`, clique em **Carregar extensão
 temporária** e selecione `dist/firefox/manifest.json`. A pasta `extension/`
 é para Brave/Chrome. Repita o build após atualizar os arquivos do projeto.
-Em `about:addons`, abra as preferências do Odoo X-Ray para configurar os
-mapeamentos container → host. Autorize o acesso ao site do Odoo se o Firefox
+Em `about:addons`, abra as preferências do Odoo X-Ray para configurar as
+pastas locais dos projetos. Autorize o acesso ao site do Odoo se o Firefox
 solicitar essa permissão.
 
 Para habilitar o fallback que abre o arquivo e a linha no VS Code:
@@ -88,18 +90,22 @@ O ZIP gerado é um pacote sem assinatura; o build não publica a extensão.
 
 ### Configuração e uso
 
-Nas opções: mapear os paths de container do Odoo (ex. `/mnt/odoo-cotacao`)
-pros paths reais no seu disco, e o template do editor
-(`vscode://file/{file}:{line}` por padrão).
+Nas opções, adicione somente a raiz local de cada projeto e configure a forma
+de ativação do tooltip. O X-Ray localiza arquivos pelo módulo e pelo sufixo do
+caminho informado pelo Odoo, sem exigir o caminho equivalente no container.
+Configurações antigas de mapeamento são migradas usando suas pastas locais.
+O template do editor é `vscode://file/{file}:{line}` por padrão.
 
 Para Brave/Chrome, execute novamente `./native/install.sh ID_DA_EXTENSAO`
-após atualizar o projeto: o host passa a localizar arquivos Python. O
-mapeamento em Options deve apontar para a raiz do código no host. No Firefox,
-execute novamente `python3 native/install-firefox.py`.
+após atualizar o projeto: o host passa a localizar arquivos Python. Adicione
+a raiz local do código nas opções. No Firefox, execute novamente
+`python3 native/install-firefox.py`.
 
-Abrir o Odoo normalmente, segurar **Alt** e passar o mouse no elemento. O
-contorno fica preso ao elemento renderizado. Use **Alt+click** para abrir o
-inspetor diretamente; o clique comum continua com o comportamento do Odoo.
+Abra o Odoo normalmente e use o atalho escolhido ao passar o mouse no
+elemento. Por padrão, o atalho é **Alt**. O contorno fica preso ao elemento
+renderizado. O mesmo atalho + clique abre o inspetor diretamente; o clique
+comum continua com o comportamento do Odoo. No modo sempre ativo, basta manter
+o cursor parado pelo atraso configurado e abrir o painel pelo botão do tooltip.
 Também há metadados nas células de listas, inclusive valores sem widget. O
 extrator antigo continua disponível para addons anteriores, que precisam de
 `?debug=1`.
@@ -115,6 +121,8 @@ de ocorrências exibida separadamente.
 Em colunas de listas relacionais, o contexto da subview faz parte do XPath:
 `//field[@name='linhas']/list/field[@name='coluna']`. Assim, a coluna não se
 confunde com um campo de mesmo nome no formulário principal ou em outra lista.
+Cabeçalhos e células identificam a coluna; sua declaração Python é buscada
+no modelo relacionado, enquanto a origem XML é buscada na view do formulário.
 
 A seção informa se o XPath foi validado apenas no XML recomposto ou também
 conferido na arquitetura retornada pelo servidor. Essa validação não elimina
@@ -180,13 +188,17 @@ uma ponte restrita a `127.0.0.1:17654`, autorizada apenas para os IDs informados
 
 ## Testes
 
+- `extension/tests/columns.cjs` — extração de cabeçalhos/células relacionais,
+  modelo da coluna e XPath na view do formulário, sem banco Odoo.
+
 - `extension/tests/xpath.cjs` — XPath, duplicidades, conferência no servidor,
   painel, cópia e respostas antigas: `node extension/tests/xpath.cjs`.
   Usa o mesmo ambiente Playwright do teste de composição.
+- `extension/tests/options.cjs` — migração das pastas, modos de ativação e
+  persistência das opções no navegador.
 
 - `addon/xray/tests/test_xray.py` — `TransactionCase`, roda no Odoo.
 - `addon/xray/tests/test_views.py` — herança, permissões, identidade e linhas XML.
-- `extension/src/rewrite.test.js` — puro, `node rewrite.test.js`.
 - `extension/src/inspect.test.js` — extrator/RPC reais, `node extension/src/inspect.test.js`.
 - `extension/src/background.test.js` — valida agendamento e mensagem do fallback.
 - `native/test_open_in_vscode.py` — protocolo, comandos do editor, `locate_view` e erros do host.

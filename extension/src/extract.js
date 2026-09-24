@@ -72,6 +72,22 @@ function xrayOccurrence(node, selector, context) {
 function xrayExtract(el) {
   if (!el) return null;
 
+  // Headers use data-name; unwidgeted body cells use name. Resolve them
+  // before a marker on the containing x2many can swallow the whole column.
+  const cell = el.closest?.('.o_list_view th[data-name], .o_list_view td[name]');
+  const cellMarker = el.closest?.('[data-xray-node]');
+  if (cell && (!cellMarker || !cell.contains(cellMarker))) {
+    const field = cell.getAttribute('data-name') || cell.getAttribute('name');
+    const route = decodeURIComponent((globalThis.location?.pathname || '').match(/^\/odoo\/([a-z][a-z0-9_.-]+)(?:\/|$)/)?.[1] || '');
+    if (field && route) {
+      const context = xrayNodeContext(cell);
+      // Rows repeat records, not XML declarations: don't use row count as
+      // evidence to disambiguate occurrences in the architecture.
+      return { model: route, field, name: field, tag: 'field', node: cell,
+        context, column: true, occurrence: null, occurrenceCount: null };
+    }
+  }
+
   const marked = el.closest?.('[data-xray-node]');
   if (marked) {
     let identity = null;

@@ -65,6 +65,19 @@ async function xrayLocateField(model, field) {
   return promise;
 }
 
+async function xrayResolveInspection(info) {
+  const viewModel = await xrayResolveModel(info.model);
+  if (!info.column || !info.context?.subview) return { ...info, model: viewModel };
+  try {
+    const fields = await xrayCallKw(viewModel, 'fields_get', [[info.context.subview], ['relation']]);
+    const model = fields[info.context.subview]?.relation;
+    return { ...info, viewModel, model: model || viewModel,
+      fieldModelError: model ? null : 'Modelo da coluna não identificado.' };
+  } catch (error) {
+    return { ...info, viewModel, model: viewModel, fieldModelError: error.message };
+  }
+}
+
 // Asks hook.js (page world, document_start) for the get_views calls it has
 // seen since the page loaded. A short timeout covers pages hook.js never
 // injected into (e.g. it loaded after our handshake) without hanging the panel.
@@ -91,7 +104,7 @@ async function xrayLocateView(info) {
     return xrayCallKw('xray.xray', 'locate_view_node', [info.viewId, info.identity])
       .catch((e) => ({ error: e.message }));
   }
-  const model = await xrayResolveModel(info.model);
+  const model = await xrayResolveModel(info.viewModel || info.model);
   const warnings = [];
   const capture = await xrayGetCapture();
   const entries = (capture?.captured || []).filter((entry) => entry.model === model && entry.result.form);
@@ -162,6 +175,11 @@ async function xrayLocateViewSource(view, nodeIndexes) {
     action: 'locate_view', xml_id: view.xml_id, arch_fs: view.arch_fs,
     arch: view.arch, nodes: nodeIndexes,
   }).catch((e) => ({ error: e.message }));
+}
+
+async function xrayResolveFile(file) {
+  return xrayLocalRequest({ action: 'resolve_file', file })
+    .catch((e) => ({ error: e.message }));
 }
 
 async function xrayLocateMethod(model, method) {
