@@ -8,8 +8,11 @@ import struct
 import subprocess
 import sys
 import time
+import xml.parsers.expat
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import quote
+
+_PRUNED_DIRS = ('.git', 'node_modules', '.venv', 'venv', '__pycache__')
 
 
 def declarations(message):
@@ -77,9 +80,143 @@ def declarations(message):
     return {'locations': locations} if action == 'locate_field' else {'overrides': locations}
 
 
+class _XmlNode:
+    """Minimal XML tree with source lines, built by xml.parsers.expat (stdlib,
+    no lxml dependency on the native host)."""
+
+    __slots__ = ('tag', 'attrib', 'children', 'sourceline', 'text')
+
+    def __init__(self, tag, attrib, sourceline, children=None):
+        self.tag = tag
+        self.attrib = attrib
+        self.children = children if children is not None else []
+        self.sourceline = sourceline
+        self.text = ''
+
+
+def parse_xml_lines(text):
+    root_holder = []
+    stack = []
+    parser = xml.parsers.expat.ParserCreate()
+
+    def start(tag, attrs):
+        node = _XmlNode(tag, attrs, parser.CurrentLineNumber)
+        if stack:
+            stack[-1].children.append(node)
+        else:
+            root_holder.append(node)
+        stack.append(node)
+
+    def end(_tag):
+        stack.pop()
+
+    def chardata(data):
+        if stack:
+            stack[-1].text += data
+
+    parser.StartElementHandler = start
+    parser.EndElementHandler = end
+    parser.CharacterDataHandler = chardata
+    parser.Parse(text, True)
+    if not root_holder:
+        raise ValueError('XML sem elemento raiz')
+    return root_holder[0]
+
+
+def walk(node):
+    yield node
+    for child in node.children:
+        yield from walk(child)
+
+
+def preorder(node):
+    return list(walk(node))
+
+
+def node_shape(node):
+    return (node.tag, tuple(sorted(node.attrib.items())), node.text.strip(),
+            tuple(node_shape(child) for child in node.children))
+
+
+def find_arch_files(arch_fs, roots):
+    """Locate every file matching arch_fs (relative to an addons root) under
+    the mapped host directories, direct join first, else by path suffix."""
+    suffix = Path(arch_fs)
+    matches = []
+    for root in roots:
+        if not isinstance(root, str) or not os.path.isabs(root):
+            continue
+        base = Path(root).resolve()
+        if not base.is_dir():
+            continue
+        direct = base / arch_fs
+        if direct.is_file():
+            matches.append(direct)
+            continue
+        for directory, dirs, files in os.walk(base):
+            dirs[:] = [name for name in dirs if name not in _PRUNED_DIRS]
+            if suffix.name not in files:
+                continue
+            path = Path(directory, suffix.name)
+            if path.parts[-len(suffix.parts):] == suffix.parts:
+                matches.append(path)
+    return matches
+
+
+def locate_view(message):
+    """Find the XML record backing a view and the source line of each
+    requested node index, comparing the file's arch against the database's
+    to avoid claiming a line that does not match the running composition."""
+    xml_id = message.get('xml_id')
+    arch_fs = message.get('arch_fs')
+    arch = message.get('arch')
+    nodes = message.get('nodes')
+    roots = message.get('roots')
+    if (not isinstance(arch, str) or len(arch) > 1024 * 1024 or
+            not isinstance(nodes, list) or len(nodes) > 64 or
+            any(not isinstance(n, int) or isinstance(n, bool) or n < 0 for n in nodes) or
+            not isinstance(roots, list) or len(roots) > 12):
+        raise ValueError('consulta de origem de view inválida')
+    if not xml_id or not arch_fs:
+        return {'matches': []}
+    if (not isinstance(xml_id, str) or not isinstance(arch_fs, str) or
+            os.path.isabs(arch_fs) or '..' in Path(arch_fs).parts):
+        raise ValueError('identificação de view inválida')
+    short_id = xml_id.split('.', 1)[1] if '.' in xml_id else xml_id
+    try:
+        db_signature = node_shape(parse_xml_lines(arch))
+    except (ValueError, xml.parsers.expat.ExpatError):
+        return {'matches': [], 'error': 'arch do banco não pôde ser interpretada'}
+
+    matches = []
+    for path in find_arch_files(arch_fs, roots):
+        try:
+            if path.stat().st_size > 4 * 1024 * 1024:
+                continue
+            file_root = parse_xml_lines(path.read_text(encoding='utf-8'))
+        except (OSError, UnicodeError, ValueError, xml.parsers.expat.ExpatError):
+            continue
+        for record in walk(file_root):
+            if record.tag != 'record' or record.attrib.get('id') not in (xml_id, short_id):
+                continue
+            field = next((c for c in record.children if c.tag == 'field' and c.attrib.get('name') == 'arch'), None)
+            if field is None:
+                continue
+            children = field.children
+            disk = children[0] if len(children) == 1 else _XmlNode('data', {}, field.sourceline, children)
+            exact = node_shape(disk) == db_signature
+            disk_order = preorder(disk)
+            lines = {str(index): disk_order[index].sourceline
+                     for index in nodes if exact and index < len(disk_order)}
+            matches.append({'file': str(path), 'record_line': record.sourceline, 'exact': exact, 'lines': lines})
+    return {'matches': matches}
+
+
 def handle_request(message):
     if message.get('action') in ('locate_field', 'locate_method'):
         return declarations(message)
+    if message.get('action') == 'locate_view':
+        return locate_view(message)
     file_path, line = validate_request(message)
     return {'ok': True, 'command': open_editor(file_path, line)}
 
@@ -190,7 +327,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
             return
         try:
             length = int(self.headers.get('Content-Length', '0'))
-            if length < 1 or length > 64 * 1024:
+            if length < 1 or length > 1024 * 1024:
                 raise ValueError('tamanho de pedido inválido')
             message = json.loads(self.rfile.read(length).decode('utf-8'))
             self.send_json(200, {'ok': True, **handle_request(message)})

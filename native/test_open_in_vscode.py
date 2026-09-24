@@ -30,6 +30,85 @@ class NativeHostTest(unittest.TestCase):
             self.assertEqual(method['overrides'][0]['line'], 4)
             self.assertEqual(field['locations'][0]['file'], source)
 
+    def test_locate_view_matches_exact_line(self):
+        with tempfile.TemporaryDirectory() as directory:
+            views_dir = os.path.join(directory, 'sale', 'views')
+            os.makedirs(views_dir)
+            xml_path = os.path.join(views_dir, 'sale_order_views.xml')
+            with open(xml_path, 'w') as handle:
+                handle.write(
+                    '<odoo>\n'
+                    '  <record id="view_order_form" model="ir.ui.view">\n'
+                    '    <field name="name">sale.order.form</field>\n'
+                    '    <field name="arch" type="xml">\n'
+                    '      <field name="partner_id"/>\n'
+                    '    </field>\n'
+                    '  </record>\n'
+                    '</odoo>\n'
+                )
+            result = open_in_vscode.locate_view({
+                'xml_id': 'sale.view_order_form', 'arch_fs': 'sale/views/sale_order_views.xml',
+                'arch': '<field name="partner_id"/>', 'nodes': [0], 'roots': [directory],
+            })
+            self.assertEqual(len(result['matches']), 1)
+            match = result['matches'][0]
+            self.assertTrue(match['exact'])
+            self.assertEqual(match['file'], xml_path)
+            self.assertEqual(match['record_line'], 2)
+            self.assertEqual(match['lines']['0'], 5)
+
+    def test_locate_view_reports_divergent_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            views_dir = os.path.join(directory, 'sale', 'views')
+            os.makedirs(views_dir)
+            xml_path = os.path.join(views_dir, 'sale_order_views.xml')
+            with open(xml_path, 'w') as handle:
+                handle.write(
+                    '<odoo><record id="view_order_form" model="ir.ui.view">'
+                    '<field name="arch" type="xml"><field name="other_field"/></field>'
+                    '</record></odoo>'
+                )
+            result = open_in_vscode.locate_view({
+                'xml_id': 'sale.view_order_form', 'arch_fs': 'sale/views/sale_order_views.xml',
+                'arch': '<field name="partner_id"/>', 'nodes': [0], 'roots': [directory],
+            })
+            self.assertEqual(len(result['matches']), 1)
+            self.assertFalse(result['matches'][0]['exact'])
+            self.assertEqual(result['matches'][0]['lines'], {})
+
+    def test_locate_view_missing_file_returns_no_matches(self):
+        with tempfile.TemporaryDirectory() as directory:
+            result = open_in_vscode.locate_view({
+                'xml_id': 'sale.view_order_form', 'arch_fs': 'sale/views/missing.xml',
+                'arch': '<form/>', 'nodes': [], 'roots': [directory],
+            })
+            self.assertEqual(result['matches'], [])
+
+    def test_locate_view_rejects_path_traversal(self):
+        with self.assertRaisesRegex(ValueError, 'inválid'):
+            open_in_vscode.locate_view({
+                'xml_id': 'sale.view_order_form', 'arch_fs': '../../etc/passwd',
+                'arch': '<form/>', 'nodes': [], 'roots': ['/tmp'],
+            })
+
+    def test_locate_view_searches_multiple_roots(self):
+        with tempfile.TemporaryDirectory() as one, tempfile.TemporaryDirectory() as two:
+            views_dir = os.path.join(two, 'sale', 'views')
+            os.makedirs(views_dir)
+            xml_path = os.path.join(views_dir, 'sale_order_views.xml')
+            with open(xml_path, 'w') as handle:
+                handle.write(
+                    '<odoo><record id="view_order_form" model="ir.ui.view">'
+                    '<field name="arch" type="xml"><form/></field>'
+                    '</record></odoo>'
+                )
+            result = open_in_vscode.locate_view({
+                'xml_id': 'sale.view_order_form', 'arch_fs': 'sale/views/sale_order_views.xml',
+                'arch': '<form/>', 'nodes': [], 'roots': [one, two],
+            })
+            self.assertEqual(len(result['matches']), 1)
+            self.assertEqual(result['matches'][0]['file'], xml_path)
+
     def test_protocol_and_validation(self):
         with tempfile.NamedTemporaryFile() as source:
             message = {'action': 'open', 'file': source.name, 'line': 22}

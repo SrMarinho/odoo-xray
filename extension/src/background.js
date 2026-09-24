@@ -24,10 +24,17 @@ function xrayValidOpenMessage(message) {
 
 function xrayValidLookup(message) {
   const request = message?.request;
-  return message?.type === 'xray.localRequest' &&
-    ['locate_field', 'locate_method'].includes(request?.action) &&
-    typeof request.model === 'string' &&
-    typeof (request.field || request.method) === 'string';
+  if (message?.type !== 'xray.localRequest') return false;
+  if (['locate_field', 'locate_method'].includes(request?.action)) {
+    return typeof request.model === 'string' && typeof (request.field || request.method) === 'string';
+  }
+  if (request?.action === 'locate_view') {
+    return typeof request.xml_id === 'string' && typeof request.arch_fs === 'string' &&
+      typeof request.arch === 'string' && request.arch.length <= 1024 * 1024 &&
+      Array.isArray(request.nodes) && request.nodes.length <= 64 &&
+      request.nodes.every((n) => Number.isInteger(n) && n >= 0);
+  }
+  return false;
 }
 
 function xraySendLocal(request, sendResponse) {

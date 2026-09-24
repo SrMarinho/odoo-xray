@@ -55,4 +55,24 @@ assert.equal(listener(
   value => { response = value; },
 ), false);
 assert.equal(response.ok, false);
+
+response = null;
+assert.equal(listener(
+  { type: 'xray.localRequest', request: { action: 'locate_view', xml_id: 'sale.view_order_form',
+    arch_fs: 'sale/views/sale_order_views.xml', arch: '<form/>', nodes: [0, 1] } },
+  { id: 'extension-id', tab: { url: 'http://localhost:8069/odoo/sale.order/1' } },
+  value => { response = value; },
+), true);
+assert.equal(nativeRequest.action, 'locate_view');
+assert.equal(JSON.stringify(nativeRequest.roots), JSON.stringify(['/tmp/project']));
+assert.equal(response.ok, true);
+
+response = null;
+assert.equal(listener(
+  { type: 'xray.localRequest', request: { action: 'locate_view', xml_id: 'sale.view_order_form',
+    arch_fs: 'sale/views/sale_order_views.xml', arch: '<form/>', nodes: [-1] } },
+  { id: 'extension-id', tab: { url: 'http://localhost:8069/odoo/sale.order/1' } },
+  value => { response = value; },
+), false);
+assert.equal(response.ok, false, 'negative node indexes are rejected');
 console.log('background.test.js: OK');
