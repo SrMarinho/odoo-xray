@@ -10,7 +10,6 @@ import sys
 import time
 import xml.parsers.expat
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import quote
 
 _PRUNED_DIRS = ('.git', 'node_modules', '.venv', 'venv', '__pycache__')
 
@@ -411,11 +410,8 @@ def editor_command(file_path, line):
             stderr=subprocess.DEVNULL,
         ).returncode == 0
         if installed:
-            # O CLI --goto do Flatpak pode retornar sucesso e deixar o arquivo
-            # numa aba inativa. A URL é encaminhada à instância gráfica e ativa
-            # o editor exatamente em linha/coluna.
-            editor_url = 'vscode://file%s:%d:1' % (quote(file_path, safe='/'), line)
-            return ['flatpak', 'run', 'com.visualstudio.code', '--open-url', editor_url]
+            return ['flatpak', 'run', 'com.visualstudio.code',
+                    '--reuse-window', '--goto', target]
     code = shutil.which('code')
     if code:
         return [code, '--reuse-window', '--goto', target]

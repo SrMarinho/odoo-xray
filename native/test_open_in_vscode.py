@@ -218,15 +218,15 @@ class NativeHostTest(unittest.TestCase):
         which.side_effect = lambda name: '/usr/bin/' + name if name == 'flatpak' else None
         run.return_value.returncode = 0
         command = open_in_vscode.editor_command('/tmp/model.py', 7)
-        self.assertEqual(command[-2:], ['--open-url', 'vscode://file/tmp/model.py:7:1'])
+        self.assertEqual(command[-3:], ['--reuse-window', '--goto', '/tmp/model.py:7'])
 
     @patch('open_in_vscode.shutil.which')
     @patch('open_in_vscode.subprocess.run')
-    def test_flatpak_url_encodes_spaces(self, run, which):
+    def test_flatpak_goto_preserves_spaces(self, run, which):
         which.side_effect = lambda name: '/usr/bin/' + name if name == 'flatpak' else None
         run.return_value.returncode = 0
         command = open_in_vscode.editor_command('/tmp/a file.py', 9)
-        self.assertEqual(command[-1], 'vscode://file/tmp/a%20file.py:9:1')
+        self.assertEqual(command[-1], '/tmp/a file.py:9')
 
     @patch.dict(os.environ, {'XRAY_NATIVE_DRY_RUN': '1'})
     def test_dry_run_preserves_exact_file_and_line(self):
