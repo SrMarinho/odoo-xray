@@ -5,6 +5,12 @@
   "description": "Inspecione campos e elementos de views do Odoo e abra sua origem no VS Code.",
   "permissions": ["storage", "nativeMessaging"],
   "host_permissions": ["http://127.0.0.1:17654/*"],
+  "web_accessible_resources": [
+    {
+      "resources": ["ui.css", "themes/*.css", "themes/themes.json"],
+      "matches": ["http://*/*", "https://*/*"]
+    }
+  ],
   "background": {
     "service_worker": "src/background.js"
   },
@@ -17,7 +23,7 @@
     },
     {
       "matches": ["http://*/odoo/*", "http://*/web*", "https://*/odoo/*", "https://*/web*"],
-      "js": ["src/rpc.js", "src/compose.js", "src/extract.js", "src/content.js"],
+      "js": ["src/settings.js", "src/rpc.js", "src/compose.js", "src/extract.js", "src/content.js"],
       "run_at": "document_idle"
     }
   ],

@@ -1,0 +1,7 @@
+{
+  "default": "modern",
+  "themes": [
+    { "id": "modern", "name": "Moderno" },
+    { "id": "luxury", "name": "Luxo" }
+  ]
+}

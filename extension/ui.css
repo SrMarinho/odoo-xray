@@ -1,0 +1,34 @@
+/* Regras de componente compartilhadas — não define nenhuma cor, fonte ou
+   duração própria, só consome tokens --xray-* (ver extension/themes/). */
+
+.xray-icon-button {
+  display: inline-grid;
+  place-items: center;
+  min-width: 32px;
+  min-height: 32px;
+  padding: 6px;
+  border: 1px solid var(--xray-border);
+  border-radius: var(--xray-radius-sm);
+  background: var(--xray-surface-raised);
+  color: var(--xray-muted);
+  cursor: pointer;
+  transition: color var(--xray-dur-fast) var(--xray-ease), border-color var(--xray-dur-fast) var(--xray-ease),
+    background var(--xray-dur-fast) var(--xray-ease), transform var(--xray-dur-fast) var(--xray-ease);
+}
+.xray-icon-button:hover { color: var(--xray-accent); border-color: var(--xray-accent); background: var(--xray-accent-soft); }
+.xray-icon-button:active { transform: scale(.96); }
+.xray-icon-button svg { width: 17px; height: 17px; pointer-events: none; }
+:where(button, input, select, [role="button"], [role="link"]):focus-visible {
+  outline: 2px solid var(--xray-accent);
+  outline-offset: 2px;
+}
+* { scrollbar-color: var(--xray-border-strong) transparent; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

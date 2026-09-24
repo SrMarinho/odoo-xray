@@ -109,6 +109,48 @@ class NativeHostTest(unittest.TestCase):
             self.assertEqual(len(result['matches']), 1)
             self.assertEqual(result['matches'][0]['file'], xml_path)
 
+    def test_resolve_container_file_by_project_suffix(self):
+        with tempfile.TemporaryDirectory() as directory:
+            views_dir = os.path.join(directory, 'abastecimento', 'views')
+            os.makedirs(views_dir)
+            source = os.path.join(views_dir, 'fatura.xml')
+            with open(source, 'w') as handle:
+                handle.write('<odoo/>')
+            result = open_in_vscode.resolve_file({
+                'action': 'resolve_file',
+                'file': '/mnt/extra-addons/abastecimento/views/fatura.xml',
+                'roots': [directory],
+            })
+            self.assertEqual(result['matches'][0]['file'], source)
+
+    def test_resolve_file_returns_equal_best_matches(self):
+        with tempfile.TemporaryDirectory() as directory:
+            expected = []
+            for project in ('one', 'two'):
+                model_dir = os.path.join(directory, project, 'sale', 'models')
+                os.makedirs(model_dir)
+                source = os.path.join(model_dir, 'order.py')
+                with open(source, 'w') as handle:
+                    handle.write('')
+                expected.append(source)
+            result = open_in_vscode.resolve_file({
+                'action': 'resolve_file',
+                'file': '/mnt/addons/sale/models/order.py',
+                'roots': [directory],
+            })
+            self.assertEqual([match['file'] for match in result['matches']], expected)
+
+    def test_resolve_file_rejects_filename_only_match(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = os.path.join(directory, 'different', 'order.py')
+            os.makedirs(os.path.dirname(source))
+            with open(source, 'w') as handle:
+                handle.write('')
+            result = open_in_vscode.resolve_file({
+                'action': 'resolve_file', 'file': '/mnt/sale/order.py', 'roots': [directory],
+            })
+            self.assertEqual(result['matches'], [])
+
     def test_protocol_and_validation(self):
         with tempfile.NamedTemporaryFile() as source:
             message = {'action': 'open', 'file': source.name, 'line': 22}

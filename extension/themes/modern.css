@@ -1,0 +1,47 @@
+/* Tema "Moderno" — contrato de tokens do Odoo X-Ray.
+   Um tema declara SÓ este bloco de custom properties, nada de seletor de
+   componente: qualquer arquivo aqui dentro vira um tema novo automaticamente,
+   desde que defina exatamente estas variáveis (ver tools/test_themes.py). */
+:root, :host {
+  color-scheme: dark;
+
+  --xray-bg: #11151c;
+  --xray-surface: #1a202a;
+  --xray-surface-raised: #202833;
+  --xray-surface-glass: rgba(17, 21, 28, .9);
+  --xray-entry-bg: rgba(32, 40, 51, .62);
+  --xray-input-bg: #0e131a;
+  --xray-border: #303a48;
+  --xray-border-strong: #465466;
+  --xray-text: #edf2f7;
+  --xray-heading: #dbe5ef;
+  --xray-muted: #9caabd;
+  --xray-subtle: #b7c5d5;
+  --xray-accent: #5eead4;
+  --xray-accent-strong: #2dd4bf;
+  --xray-accent-soft: rgba(94, 234, 212, .12);
+  --xray-accent-border: rgba(94, 234, 212, .35);
+  --xray-accent-gradient: linear-gradient(135deg, #5eead4, #2dd4bf);
+  --xray-on-accent: #062b27;
+  --xray-warning: #fbbf24;
+  --xray-warning-text: #d5bd7a;
+  --xray-warning-bg: rgba(251, 191, 36, .07);
+  --xray-error: #fb7185;
+  --xray-error-border: rgba(251, 113, 133, .35);
+  --xray-error-bg: rgba(251, 113, 133, .08);
+  --xray-page-glow: #1d2937;
+
+  --xray-radius-sm: 8px;
+  --xray-radius: 12px;
+  --xray-shadow: 0 18px 50px rgba(0, 0, 0, .38), 0 4px 14px rgba(0, 0, 0, .24);
+  --xray-font: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --xray-font-display: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  --xray-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  --xray-heading-tracking: .075em;
+
+  --xray-ease: cubic-bezier(.22, 1, .36, 1);
+  --xray-dur-fast: 120ms;
+  --xray-dur-base: 180ms;
+  --xray-dur-slow: 260ms;
+  --xray-enter-distance: 4px;
+}

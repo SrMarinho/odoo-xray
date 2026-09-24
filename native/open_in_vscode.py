@@ -15,6 +15,12 @@ from urllib.parse import quote
 _PRUNED_DIRS = ('.git', 'node_modules', '.venv', 'venv', '__pycache__')
 
 
+def display_path(path, base):
+    """Show the path relative to its project root, prefixed with the
+    root's own folder name, instead of the full local filesystem path."""
+    return str(Path(base.name, path.relative_to(base)))
+
+
 def declarations(message):
     """Find declarations in configured host source trees without importing Odoo."""
     model = message.get('model')
@@ -67,7 +73,7 @@ def declarations(message):
                         continue
                     for node in klass.body:
                         if action == 'locate_method' and isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == symbol:
-                            locations.append({'file': str(path), 'line': node.lineno, 'klass': klass.name, 'module': path.parent.parent.name, 'host': True})
+                            locations.append({'file': str(path), 'display': display_path(path, base), 'line': node.lineno, 'klass': klass.name, 'module': path.parent.parent.name, 'host': True})
                         if action == 'locate_field' and isinstance(node, (ast.Assign, ast.AnnAssign)):
                             targets = node.targets if isinstance(node, ast.Assign) else [node.target]
                             value = node.value
@@ -76,7 +82,7 @@ def declarations(message):
                                              isinstance(value.func.value, ast.Name) and
                                              value.func.value.id == 'fields')
                             if is_odoo_field and any(isinstance(target, ast.Name) and target.id == symbol for target in targets):
-                                locations.append({'file': str(path), 'line': node.lineno, 'klass': klass.name, 'module': path.parent.parent.name, 'host': True})
+                                locations.append({'file': str(path), 'display': display_path(path, base), 'line': node.lineno, 'klass': klass.name, 'module': path.parent.parent.name, 'host': True})
     return {'locations': locations} if action == 'locate_field' else {'overrides': locations}
 
 
@@ -151,7 +157,7 @@ def find_arch_files(arch_fs, roots):
             continue
         direct = base / arch_fs
         if direct.is_file():
-            matches.append(direct)
+            matches.append((direct, base))
             continue
         for directory, dirs, files in os.walk(base):
             dirs[:] = [name for name in dirs if name not in _PRUNED_DIRS]
@@ -159,8 +165,51 @@ def find_arch_files(arch_fs, roots):
                 continue
             path = Path(directory, suffix.name)
             if path.parts[-len(suffix.parts):] == suffix.parts:
-                matches.append(path)
+                matches.append((path, base))
     return matches
+
+
+def resolve_file(message):
+    """Resolve an absolute path from Odoo/container inside configured projects.
+
+    Only the uniquely best suffix match is automatic. Equal best matches are
+    returned together so the extension can present the ambiguity.
+    """
+    source = message.get('file')
+    roots = message.get('roots')
+    if (not isinstance(source, str) or len(source) > 4096 or '\0' in source or
+            not os.path.isabs(source) or not isinstance(roots, list) or len(roots) > 12):
+        raise ValueError('resolução de arquivo inválida')
+    source_parts = Path(source).parts
+    scored = {}
+    display = {}
+    for root in roots:
+        if not isinstance(root, str) or not os.path.isabs(root):
+            continue
+        base = Path(root).resolve()
+        if not base.is_dir():
+            continue
+        for directory, dirs, files in os.walk(base):
+            dirs[:] = [name for name in dirs if name not in _PRUNED_DIRS]
+            if Path(source).name not in files:
+                continue
+            path = Path(directory, Path(source).name).resolve()
+            score = 0
+            for local_part, source_part in zip(reversed(path.parts), reversed(source_parts)):
+                if local_part != source_part:
+                    break
+                score += 1
+            # Filename alone is too weak: require at least its parent directory.
+            if score >= 2:
+                key = str(path)
+                if score >= scored.get(key, -1):
+                    scored[key] = score
+                    display[key] = display_path(path, base)
+    if not scored:
+        return {'matches': []}
+    best = max(scored.values())
+    return {'matches': [{'file': path, 'display': display[path], 'score': score}
+                        for path, score in sorted(scored.items()) if score == best]}
 
 
 def locate_view(message):
@@ -189,7 +238,7 @@ def locate_view(message):
         return {'matches': [], 'error': 'arch do banco não pôde ser interpretada'}
 
     matches = []
-    for path in find_arch_files(arch_fs, roots):
+    for path, base in find_arch_files(arch_fs, roots):
         try:
             if path.stat().st_size > 4 * 1024 * 1024:
                 continue
@@ -208,7 +257,8 @@ def locate_view(message):
             disk_order = preorder(disk)
             lines = {str(index): disk_order[index].sourceline
                      for index in nodes if exact and index < len(disk_order)}
-            matches.append({'file': str(path), 'record_line': record.sourceline, 'exact': exact, 'lines': lines})
+            matches.append({'file': str(path), 'display': display_path(path, base),
+                             'record_line': record.sourceline, 'exact': exact, 'lines': lines})
     return {'matches': matches}
 
 
@@ -217,6 +267,8 @@ def handle_request(message):
         return declarations(message)
     if message.get('action') == 'locate_view':
         return locate_view(message)
+    if message.get('action') == 'resolve_file':
+        return resolve_file(message)
     file_path, line = validate_request(message)
     return {'ok': True, 'command': open_editor(file_path, line)}
 
@@ -309,11 +361,24 @@ def open_editor(file_path, line):
 class BridgeHandler(BaseHTTPRequestHandler):
     server_version = 'OdooXRay/1.0'
 
+    def _cors_headers(self):
+        origin = self.headers.get('Origin', '')
+        if origin.startswith('chrome-extension://') or origin.startswith('moz-extension://'):
+            self.send_header('Access-Control-Allow-Origin', origin)
+            self.send_header('Access-Control-Allow-Methods', 'POST, OPTIONS')
+            self.send_header('Access-Control-Allow-Headers', 'Content-Type, X-Odoo-XRay-Extension')
+
+    def do_OPTIONS(self):
+        self.send_response(204)
+        self._cors_headers()
+        self.end_headers()
+
     def send_json(self, status, body):
         payload = json.dumps(body).encode('utf-8')
         self.send_response(status)
         self.send_header('Content-Type', 'application/json')
         self.send_header('Content-Length', str(len(payload)))
+        self._cors_headers()
         self.end_headers()
         self.wfile.write(payload)
 

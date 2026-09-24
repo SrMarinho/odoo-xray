@@ -15,11 +15,12 @@ def build(destination=DEFAULT_DESTINATION):
     destination = Path(destination)
     destination.mkdir(parents=True, exist_ok=True)
     for relative in ('src/background.js', 'src/content.js', 'src/extract.js',
-                     'src/rpc.js', 'src/hook.js', 'src/compose.js',
-                     'options/options.html', 'options/options.js'):
+                     'src/rpc.js', 'src/hook.js', 'src/compose.js', 'src/settings.js',
+                     'options/options.html', 'options/options.js', 'ui.css'):
         target = destination / relative
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(SOURCE / relative, target)
+    shutil.copytree(SOURCE / 'themes', destination / 'themes', dirs_exist_ok=True)
 
     manifest = json.loads((SOURCE / 'manifest.json').read_text())
     manifest['background'] = {'scripts': [manifest['background']['service_worker']]}
