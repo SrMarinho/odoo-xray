@@ -35,7 +35,10 @@ class XrayInteractionController {
       target.closest('.o_field_widget, .o_form_label, [data-tooltip-info]') || info.node;
     clearTimeout(xrayHideTimer);
     if (xrayActivationMode === 'shortcut') {
+      xrayAnchor = anchor;
       xrayHoverInfo = info.model && (info.identity || info.field || info.tag) ? info : null;
+      xrayShowHighlight(anchor);
+      return;
     }
     if (xrayAnchor === anchor && xrayTooltipEl?.host.classList.contains('xray-open')) return;
     xrayRenderBasic(info, anchor);

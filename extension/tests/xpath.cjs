@@ -63,6 +63,10 @@ const { chromium } = require('playwright');
       window.chrome = { storage: { sync: { get: (_keys, cb) => cb({}) }, onChanged: { addListener() {} } } };
       window.xrayLocateView = async () => window.fixture;
       window.xrayLocateViewSource = async () => ({ error: 'No local host' });
+      window.xrayLocateField = async (model, field) => ({ model, field, locations: [{
+        file: '/home/me/project/models/partner.py', display: 'project/models/partner.py',
+        line: 17, module: 'project', klass: 'Partner', host: true,
+      }] });
     });
     await page.addScriptTag({ path: path.join(__dirname, '../src/core.js') });
     await page.addScriptTag({ path: path.join(__dirname, '../src/settings.js') });
@@ -96,6 +100,9 @@ const { chromium } = require('playwright');
       Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async (text) => { window.copied = text; } } });
       await xrayShowViewPanel({ model: 'res.partner', field: 'email' });
     }, fixture);
+    assert.equal(await page.getByRole('heading', { name: 'Propriedade Python', exact: true }).count(), 1);
+    assert.match(await page.locator('.field-source').innerText(), /project — Partner/);
+    assert.match(await page.locator('.field-source [role="link"]').innerText(), /partner.py:17/);
     await page.getByRole('button', { name: 'Copiar XPath', exact: true }).focus();
     await page.keyboard.press('Enter');
     assert.equal(await page.evaluate(() => window.copied), "//field[@name='email']");

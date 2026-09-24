@@ -28,6 +28,7 @@ const context = vm.createContext({
   xrayHide: () => calls.push('hide'),
   xrayExtract: () => info,
   xrayResolveInspection: async value => value,
+  xrayShowHighlight: () => calls.push('highlight'),
   xrayRenderBasic(value, valueAnchor) {
     calls.push('render');
     context.xrayAnchor = valueAnchor;
@@ -42,7 +43,7 @@ vm.runInContext(fs.readFileSync(path.join(__dirname, 'interaction.js'), 'utf8'),
 
 (async () => {
   await vm.runInContext('xrayInteractionController.inspectHover(target)', context);
-  assert.deepEqual(calls, ['render', 'locate', 'locations', 'position']);
+  assert.deepEqual(calls, ['highlight'], 'shortcut hover identifies the field without opening a tooltip');
   assert.equal(context.xrayHoverInfo, info, 'shortcut hover retains the inspected field for Alt+click');
 
   const tooltipHost = {};

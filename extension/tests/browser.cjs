@@ -50,22 +50,18 @@ if (!url || !db?.startsWith('xray_test_')) throw new Error('Use XRAY_TEST_URL an
     }
     await page.keyboard.down('Alt');
     await field.hover();
-    const tooltip = page.locator('#xray-tooltip-host');
-    await tooltip.getByRole('button', { name: 'Ver origem na view' }).waitFor();
-    const initial = await tooltip.boundingBox();
-    const anchor = await field.boundingBox();
-    await page.mouse.move(anchor.x + Math.min(20, anchor.width / 2), anchor.y + anchor.height / 2);
-    const sameAnchor = await tooltip.boundingBox();
-    assert.equal(Math.round(sameAnchor.x), Math.round(initial.x), 'tooltip must not follow the mouse');
-    await tooltip.getByRole('button', { name: 'Ver origem na view' }).click();
+    const cancelled = await field.evaluate(node => !node.dispatchEvent(new MouseEvent('click', {
+      bubbles: true, cancelable: true, altKey: true,
+    })));
+    assert.equal(cancelled, true, 'Alt+click must suppress the original Odoo action');
     const panel = page.locator('#xray-panel-host');
     await panel.getByRole('heading', { name: 'res.partner.name' }).waitFor();
     assert.equal(await panel.locator('.error').count(), 0);
     assert.match(await panel.locator('aside').innerText(), /Origem (exata|prov[aá]vel)/);
+    assert.equal(await panel.getByRole('heading', { name: 'Propriedade Python' }).count(), 1);
     // Validate click routing without launching an external editor during tests.
     await page.evaluate(() => { window.xrayOpened = []; xrayOpenInEditor = (file, line) => window.xrayOpened.push({ file, line }); });
-    await field.hover();
-    const pythonLink = tooltip.locator('.xray-clickable').first();
+    const pythonLink = panel.locator('.field-source .xray-clickable').first();
     await pythonLink.click();
     assert.equal(await page.evaluate(() => window.xrayOpened.length), 1);
     await page.keyboard.up('Alt');
@@ -74,10 +70,10 @@ if (!url || !db?.startsWith('xray_test_')) throw new Error('Use XRAY_TEST_URL an
     await panel.getByRole('button', { name: 'Fechar' }).click();
     await panel.waitFor({ state: 'hidden' });
     assert.equal(await panel.isVisible(), false);
-    const cancelled = await field.evaluate(node => !node.dispatchEvent(new MouseEvent('click', {
+    const cancelledAgain = await field.evaluate(node => !node.dispatchEvent(new MouseEvent('click', {
       bubbles: true, cancelable: true, altKey: true,
     })));
-    assert.equal(cancelled, true, 'Alt+click must suppress the original Odoo action');
+    assert.equal(cancelledAgain, true, 'Alt+click must suppress the original Odoo action');
     await panel.getByRole('heading', { name: 'res.partner.name' }).waitFor();
     await panel.getByRole('button', { name: 'Fechar' }).click();
     assert.deepEqual(pageErrors, []);

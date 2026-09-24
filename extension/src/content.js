@@ -760,6 +760,38 @@ function xrayLegacyFieldXPath(result, info) {
   };
 }
 
+async function xrayRenderFieldSource(parent, info, request) {
+  if (!info.field) return;
+  const section = xrayText(parent, 'section', '', 'field-source');
+  xrayText(section, 'h3', 'Propriedade Python');
+  const content = xrayText(section, 'div', 'Localizando declaração…', 'xray-loading');
+  const result = info.fieldModelError ? { error: info.fieldModelError } :
+    await xrayLocateField(info.model, info.field);
+  if (request !== xrayPanelRequest) return;
+  content.replaceChildren();
+  content.classList.remove('xray-loading');
+  if (result.error) {
+    xrayText(content, 'p', result.error, 'error');
+    return;
+  }
+  if (result.automatic) {
+    xrayText(content, 'p', 'Campo automático do ORM, sem arquivo de origem.', 'muted');
+    return;
+  }
+  if (!result.locations?.length) {
+    xrayText(content, 'p', result.warning ? 'Fonte local indisponível: ' + result.warning :
+      'Nenhuma declaração Python encontrada nas pastas dos projetos.', 'muted');
+    return;
+  }
+  for (const location of result.locations) {
+    const entry = xrayText(content, 'div', '', 'entry');
+    xrayText(entry, 'strong', (location.module || 'core') + ' — ' + location.klass);
+    await xraySourceLink(entry, location);
+  }
+  if (result.related) xrayText(content, 'p', 'related: ' + result.related, 'muted');
+  if (result.warning) xrayText(content, 'p', 'Fonte local: ' + result.warning, 'muted');
+}
+
 async function xrayShowViewPanel(info) {
   const request = ++xrayPanelRequest;
   if (info.node) xrayShowHighlight(info.node, true);
@@ -776,10 +808,13 @@ async function xrayShowViewPanel(info) {
   close.addEventListener('click', xrayClosePanel);
   close.focus();
   const body = xrayText(box, 'div', 'Resolvendo a herança da view…', 'panel-body xray-loading');
-  const result = await xrayLocateView(info);
-  if (request !== xrayPanelRequest) return;
+  const viewRequest = xrayLocateView(info);
   body.replaceChildren();
   body.classList.remove('xray-loading');
+  await xrayRenderFieldSource(body, info, request);
+  const result = await viewRequest;
+  if (request !== xrayPanelRequest) return;
+  xrayText(body, 'h3', 'Origem na view');
   if (result.error) { xrayText(body, 'p', result.error, 'error'); return; }
   if (result.candidates) {
     await xrayRenderOrigin(body, result, request);
