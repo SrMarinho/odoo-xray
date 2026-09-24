@@ -22,6 +22,9 @@ class NativeHostTest(unittest.TestCase):
             def resolve_file(self, _message):
                 return {'route': 'file'}
 
+            def locate_menu(self, _message):
+                return {'route': 'menu'}
+
         class Editor:
             def open(self, _message):
                 return {'route': 'editor'}
@@ -31,7 +34,32 @@ class NativeHostTest(unittest.TestCase):
                          {'route': 'declaration', 'action': 'locate_field'})
         self.assertEqual(application.handle({'action': 'locate_view'}), {'route': 'view'})
         self.assertEqual(application.handle({'action': 'resolve_file'}), {'route': 'file'})
+        self.assertEqual(application.handle({'action': 'locate_menu'}), {'route': 'menu'})
         self.assertEqual(application.handle({'action': 'open'}), {'route': 'editor'})
+
+    def test_locates_menuitem_and_explicit_menu_record(self):
+        with tempfile.TemporaryDirectory() as directory:
+            views_dir = os.path.join(directory, 'abastecimento', 'views')
+            os.makedirs(views_dir)
+            source = os.path.join(views_dir, 'menus.xml')
+            with open(source, 'w') as handle:
+                handle.write(
+                    '<odoo>\n'
+                    '  <menuitem id="menu_overview" name="Visão Geral"/>\n'
+                    '  <record id="menu_settings" model="ir.ui.menu"/>\n'
+                    '</odoo>\n'
+                )
+            overview = open_in_vscode.locate_menu({
+                'action': 'locate_menu', 'xml_id': 'abastecimento.menu_overview',
+                'roots': [directory],
+            })
+            settings = open_in_vscode.locate_menu({
+                'action': 'locate_menu', 'xml_id': 'abastecimento.menu_settings',
+                'roots': [directory],
+            })
+            self.assertEqual(overview['locations'][0]['line'], 2)
+            self.assertEqual(settings['locations'][0]['line'], 3)
+            self.assertEqual(overview['locations'][0]['file'], source)
 
     def test_finds_field_and_method_without_odoo_module(self):
         with tempfile.TemporaryDirectory() as directory:

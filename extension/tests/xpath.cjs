@@ -67,6 +67,11 @@ const { chromium } = require('playwright');
         file: '/home/me/project/models/partner.py', display: 'project/models/partner.py',
         line: 17, module: 'project', klass: 'Partner', host: true,
       }] });
+      window.xrayLocateMenu = async info => ({
+        xmlId: info.menuXmlId, menu: { complete_name: 'Abastecimento / Visão Geral', action: [12, 'Overview'] },
+        locations: [{ file: '/home/me/project/views/menus.xml', display: 'project/views/menus.xml',
+          line: 8, module: 'abastecimento', host: true }],
+      });
     });
     await page.addScriptTag({ path: path.join(__dirname, '../src/core.js') });
     await page.addScriptTag({ path: path.join(__dirname, '../src/settings.js') });
@@ -85,6 +90,13 @@ const { chromium } = require('playwright');
       xrayActivationMode = 'shortcut';
       xrayActivationModifiers = ['alt'];
     });
+    await page.evaluate(async () => {
+      await xrayShowViewPanel({ model: 'ir.ui.menu', tag: 'menu', label: 'Visão Geral',
+        name: 'abastecimento.menu_overview', menuXmlId: 'abastecimento.menu_overview', menuId: 373 });
+    });
+    assert.equal(await page.getByRole('heading', { name: 'Menu: Visão Geral' }).count(), 1);
+    assert.match(await page.locator('aside').innerText(), /Abastecimento \/ Visão Geral/);
+    assert.match(await page.locator('aside [role="link"]').innerText(), /menus.xml:8/);
     result = await resolve('<form><field name="email"/></form>');
     const fixture = { ...result, loadedId: 1, target: { tag: 'field', name: 'email' },
       views: { 1: { id: 1, name: 'Contact' } } };

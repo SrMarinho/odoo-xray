@@ -262,6 +262,47 @@ def locate_view(message):
     return {'matches': matches}
 
 
+def locate_menu(message):
+    """Locate a menuitem or explicit ir.ui.menu record by its XML ID."""
+    xml_id = message.get('xml_id')
+    roots = message.get('roots')
+    if (not isinstance(xml_id, str) or '.' not in xml_id or
+            not all(part.replace('_', '').replace('-', '').isalnum()
+                    for part in xml_id.split('.')) or
+            not isinstance(roots, list) or len(roots) > 12):
+        raise ValueError('consulta de menu inválida')
+    module, short_id = xml_id.split('.', 1)
+    locations = []
+    for root in roots:
+        if not isinstance(root, str) or not os.path.isabs(root):
+            continue
+        base = Path(root).resolve()
+        if not base.is_dir():
+            continue
+        for directory, dirs, files in os.walk(base):
+            dirs[:] = [name for name in dirs if name not in _PRUNED_DIRS]
+            for filename in files:
+                if not filename.endswith('.xml'):
+                    continue
+                path = Path(directory, filename)
+                try:
+                    if path.stat().st_size > 1024 * 1024:
+                        continue
+                    tree = parse_xml_lines(path.read_text(encoding='utf-8'))
+                except (OSError, UnicodeError, ValueError, xml.parsers.expat.ExpatError):
+                    continue
+                for node in walk(tree):
+                    node_id = node.attrib.get('id')
+                    is_menuitem = node.tag == 'menuitem'
+                    is_menu_record = node.tag == 'record' and node.attrib.get('model') == 'ir.ui.menu'
+                    if (is_menuitem or is_menu_record) and node_id in (short_id, xml_id):
+                        locations.append({
+                            'file': str(path), 'display': display_path(path, base),
+                            'line': node.sourceline, 'module': module, 'host': True,
+                        })
+    return {'locations': locations}
+
+
 class SourceLocator:
     """Application boundary for source-code lookup operations."""
 
@@ -273,6 +314,9 @@ class SourceLocator:
 
     def resolve_file(self, message):
         return resolve_file(message)
+
+    def locate_menu(self, message):
+        return locate_menu(message)
 
 
 class EditorService:
@@ -298,6 +342,8 @@ class XrayApplication:
             return self.source_locator.locate_view(message)
         if action == 'resolve_file':
             return self.source_locator.resolve_file(message)
+        if action == 'locate_menu':
+            return self.source_locator.locate_menu(message)
         return self.editor.open(message)
 
 

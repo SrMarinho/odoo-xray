@@ -70,6 +70,9 @@ OdooXray.RequestValidator = class RequestValidator {
         Array.isArray(request.nodes) && request.nodes.length <= 64 &&
         request.nodes.every((node) => Number.isInteger(node) && node >= 0);
     }
+    if (request?.action === 'locate_menu') {
+      return typeof request.xml_id === 'string' && /^[a-zA-Z0-9_]+\.[a-zA-Z0-9_.-]+$/.test(request.xml_id);
+    }
     return request?.action === 'resolve_file' && typeof request.file === 'string' &&
       request.file.startsWith('/') && !request.file.includes('\0') && request.file.length <= 4096;
   }

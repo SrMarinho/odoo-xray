@@ -72,6 +72,21 @@ function xrayOccurrence(node, selector, context) {
 function xrayExtract(el) {
   if (!el) return null;
 
+  // Odoo 19 exposes stable XML IDs on desktop and mobile navigation entries.
+  // Menus are ir.ui.menu records, not nodes from the current view arch.
+  const menu = el.closest?.('.o_main_navbar [data-menu-xmlid], .o_app_menu_sidebar [data-menu-xmlid]');
+  if (menu) {
+    const xmlId = menu.getAttribute('data-menu-xmlid');
+    const section = menu.getAttribute('data-section') ||
+      menu.querySelector?.('[data-section]')?.getAttribute('data-section');
+    if (xmlId) return {
+      model: 'ir.ui.menu', field: null, tag: 'menu', name: xmlId,
+      label: menu.textContent.trim(), menuXmlId: xmlId,
+      menuId: /^\d+$/.test(section || '') ? Number(section) : null,
+      node: menu,
+    };
+  }
+
   // Headers use data-name; unwidgeted body cells use name. Resolve them
   // before a marker on the containing x2many can swallow the whole column.
   const cell = el.closest?.('.o_list_view th[data-name], .o_list_view td[name]');

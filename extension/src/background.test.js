@@ -98,6 +98,16 @@ assert.equal(listener(
 ), false);
 assert.equal(response.ok, false, 'negative node indexes are rejected');
 
+response = null;
+assert.equal(listener(
+  { type: 'xray.localRequest', request: { action: 'locate_menu', xml_id: 'abastecimento.menu_overview' } },
+  { id: 'extension-id', tab: { url: 'http://localhost:8069/odoo/action-373/1' } },
+  value => { response = value; },
+), true);
+assert.equal(nativeRequest.action, 'locate_menu');
+assert.equal(nativeRequest.xml_id, 'abastecimento.menu_overview');
+assert.equal(response.ok, true);
+
 (async () => {
   bridgeEnabled = true;
   nativeResponse = undefined;

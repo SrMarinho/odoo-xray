@@ -60,6 +60,17 @@ assert.equal(extractedGroup.tag, 'group');
 assert.equal(extractedGroup.label, 'Endereço');
 assert.equal(extractedGroup.field, null);
 
+const menuNode = {
+  textContent: 'Visão Geral',
+  getAttribute: name => ({ 'data-menu-xmlid': 'abastecimento.menu_overview', 'data-section': '373' })[name] || null,
+  querySelector: () => null,
+  closest: selector => selector.includes('[data-menu-xmlid]') ? menuNode : null,
+};
+const extractedMenu = context.xrayExtract(menuNode);
+assert.equal(extractedMenu.tag, 'menu');
+assert.equal(extractedMenu.menuXmlId, 'abastecimento.menu_overview');
+assert.equal(extractedMenu.menuId, 373);
+
 (async () => {
   let calls = 0;
   const listeners = {};
@@ -95,6 +106,9 @@ assert.equal(extractedGroup.field, null);
       const { model, method } = body.params;
       let result;
       if (model === 'ir.actions.act_window') result = [{ id: 279, res_model: 'res.partner', views: [], context: {} }];
+      else if (model === 'ir.model.data') result = [{ res_id: 373 }];
+      else if (model === 'ir.ui.menu') result = [{ id: 373, name: 'Visão Geral',
+        complete_name: 'Abastecimento / Visão Geral', action: [12, 'Overview'] }];
       else if (model === 'ir.ui.view') result = [{ id: 42, name: 'v', xml_id: 'base.view_form', inherit_id: false,
         priority: 16, mode: 'primary', active: true, arch: '<form/>', arch_fs: 'base/views/x.xml', model: 'res.partner' }];
       else if (model === 'ir.module.module') result = [{ name: 'base', state: 'installed' }];
@@ -131,6 +145,9 @@ assert.equal(extractedGroup.field, null);
   assert.equal(requests.at(-1).request.action, 'locate_method');
   await rpcContext.xrayLocateViewSource({ xml_id: 'base.view_form', arch_fs: 'x.xml', arch: '<form/>' }, [0]);
   assert.equal(requests.at(-1).request.action, 'locate_view');
+  const menu = await rpcContext.xrayLocateMenu({ tag: 'menu', menuXmlId: 'abastecimento.menu_overview' });
+  assert.equal(menu.menu.complete_name, 'Abastecimento / Visão Geral');
+  assert.equal(requests.at(-1).request.action, 'locate_menu');
 
   assert.equal(await rpcContext.xrayResolveModel('contacts'), 'res.partner');
   assert.equal(await rpcContext.xrayResolveModel('action-279'), 'res.partner');

@@ -200,6 +200,7 @@ let xrayHighlight = null;
 let xrayPinnedAnchor = null;
 
 function xrayElementTitle(info) {
+  if (info.tag === 'menu') return 'Menu: ' + (info.label || info.menuXmlId || info.name);
   if (info.field) return info.model + '.' + info.field;
   const detail = info.label || info.name;
   return '<' + (info.tag || 'element') + (detail ? ' ' + detail : '') + '>';
@@ -792,6 +793,35 @@ async function xrayRenderFieldSource(parent, info, request) {
   if (result.warning) xrayText(content, 'p', 'Fonte local: ' + result.warning, 'muted');
 }
 
+async function xrayRenderMenuSource(body, info, request) {
+  const result = await xrayLocateMenu(info);
+  if (request !== xrayPanelRequest) return;
+  body.replaceChildren();
+  body.classList.remove('xray-loading');
+  xrayText(body, 'h3', 'Menu Odoo');
+  xrayText(body, 'pre', result.xmlId || info.menuXmlId || info.name, 'muted');
+  if (result.menu?.complete_name) xrayText(body, 'p', result.menu.complete_name);
+  if (result.menu?.action) {
+    const action = Array.isArray(result.menu.action) ? result.menu.action[1] : result.menu.action;
+    xrayText(body, 'p', 'Ação: ' + action, 'muted');
+  }
+  xrayText(body, 'h3', 'Origem XML');
+  if (result.error) {
+    xrayText(body, 'p', result.error, 'error');
+    return;
+  }
+  if (!result.locations?.length) {
+    xrayText(body, 'p', result.warning ? 'Fonte local indisponível: ' + result.warning :
+      'Declaração do menu não encontrada nas pastas dos projetos.', 'muted');
+    return;
+  }
+  for (const location of result.locations) {
+    const entry = xrayText(body, 'div', '', 'entry');
+    xrayText(entry, 'strong', location.module || result.xmlId?.split('.')[0] || 'módulo');
+    await xraySourceLink(entry, location);
+  }
+}
+
 async function xrayShowViewPanel(info) {
   const request = ++xrayPanelRequest;
   if (info.node) xrayShowHighlight(info.node, true);
@@ -808,6 +838,11 @@ async function xrayShowViewPanel(info) {
   close.addEventListener('click', xrayClosePanel);
   close.focus();
   const body = xrayText(box, 'div', 'Resolvendo a herança da view…', 'panel-body xray-loading');
+  if (info.tag === 'menu') {
+    body.textContent = 'Localizando menu…';
+    await xrayRenderMenuSource(body, info, request);
+    return;
+  }
   const viewRequest = xrayLocateView(info);
   body.replaceChildren();
   body.classList.remove('xray-loading');

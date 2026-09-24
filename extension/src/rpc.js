@@ -188,6 +188,29 @@ async function xrayLocateMethod(model, method) {
     .catch((e) => ({ error: e.message }));
 }
 
+async function xrayLocateMenu(info) {
+  const xmlId = info.menuXmlId || info.name;
+  const parts = (xmlId || '').split('.', 2);
+  let menuId = info.menuId;
+  try {
+    if (!menuId && parts.length === 2) {
+      const records = await xrayCallKw('ir.model.data', 'search_read', [[
+        ['module', '=', parts[0]], ['name', '=', parts[1]], ['model', '=', 'ir.ui.menu'],
+      ], ['res_id'], 0, 1]);
+      menuId = records[0]?.res_id;
+    }
+    const [menus, local] = await Promise.all([
+      menuId ? xrayCallKw('ir.ui.menu', 'search_read', [
+        [['id', '=', menuId]], ['name', 'complete_name', 'parent_id', 'action'], 0, 1,
+      ]) : Promise.resolve([]),
+      xrayLocalRequest({ action: 'locate_menu', xml_id: xmlId }),
+    ]);
+    return { xmlId, menu: menus[0] || null, locations: local.locations || [], warning: local.error };
+  } catch (error) {
+    return { xmlId, menu: null, locations: [], error: error.message };
+  }
+}
+
 function xrayLocalRequest(request) {
   return new Promise((resolve) => {
     chrome.runtime.sendMessage({ type: 'xray.localRequest', request }, (response) => {
