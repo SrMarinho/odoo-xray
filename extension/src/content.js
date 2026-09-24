@@ -342,6 +342,11 @@ function xrayGetPanel() {
     .muted { color:#aaa; } .error { color:#f48771; }
     .xray-clickable { color:#4ec9b0; cursor:pointer; } .xray-clickable:hover { text-decoration:underline; }
     pre { white-space:pre-wrap; overflow-wrap:anywhere; margin:4px 0; font-size:12px; }
+    .xpath-copy-row { display:flex; align-items:flex-start; gap:8px; margin:6px 0; }
+    .xpath-expression { flex:1; min-width:0; cursor:pointer; }
+    .xpath-expression:hover { color:#4ec9b0; }
+    .xpath-expression:focus-visible { outline:2px solid #4ec9b0; outline-offset:2px; }
+    .xpath-copy-icon { flex:none; display:flex; padding:5px; }
     details { margin-top:8px; } summary { cursor:pointer; color:#9cdcfe; }
   `;
   shadow.appendChild(style);
@@ -368,6 +373,125 @@ function xraySourceLink(parent, source) {
   else xrayText(parent, 'div', 'Configure o mapeamento deste caminho nas opções.', 'muted');
 }
 
+async function xrayCopyXPath(expression, parent) {
+  try {
+    await navigator.clipboard.writeText(expression);
+    return true;
+  } catch (_error) {
+    const input = document.createElement('textarea');
+    input.value = expression;
+    input.setAttribute('aria-label', 'XPath para cópia');
+    input.style.cssText = 'position:fixed;opacity:0;';
+    const previous = parent.getRootNode().activeElement || document.activeElement;
+    parent.appendChild(input);
+    try {
+      input.focus();
+      input.select();
+      return document.execCommand('copy');
+    } catch (_fallbackError) {
+      return false;
+    } finally {
+      input.remove();
+      previous?.focus();
+    }
+  }
+}
+
+function xrayRenderXPath(parent, xpath, view, ambiguous = false, legacy = false) {
+  xrayText(parent, 'h3', 'XPath do campo');
+  if (!xpath) {
+    xrayText(parent, 'p', 'Não foi possível determinar o XPath deste campo.', 'muted');
+    return;
+  }
+  const row = xrayText(parent, 'div', '', 'xpath-copy-row');
+  const expression = xrayText(row, 'pre', xpath.expression, 'xpath-expression');
+  expression.setAttribute('role', 'button');
+  expression.tabIndex = 0;
+  expression.title = 'Clique para copiar o XPath';
+  const copy = xrayText(row, 'button', '', 'xpath-copy-icon');
+  copy.setAttribute('aria-label', 'Copiar XPath');
+  copy.title = 'Copiar XPath';
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  for (const [name, value] of Object.entries({ width: '16', height: '16', viewBox: '0 0 24 24',
+    fill: 'none', stroke: 'currentColor', 'stroke-width': '1.8', 'aria-hidden': 'true', focusable: 'false' })) {
+    svg.setAttribute(name, value);
+  }
+  const icon = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  icon.setAttribute('d', 'M9 9h12v12H9z M5 15H3V3h12v2');
+  svg.appendChild(icon);
+  copy.appendChild(svg);
+  const status = xrayText(parent, 'span', '');
+  status.setAttribute('aria-live', 'polite');
+  let feedbackTimer = null;
+  const showCopyIcon = () => {
+    clearTimeout(feedbackTimer);
+    copy.replaceChildren(svg);
+    copy.setAttribute('aria-label', 'Copiar XPath');
+    copy.title = 'Copiar XPath';
+  };
+  const copyXPath = async () => {
+    const copied = await xrayCopyXPath(xpath.expression, parent);
+    if (copied) {
+      clearTimeout(feedbackTimer);
+      copy.replaceChildren('Copiado');
+      copy.setAttribute('aria-label', 'XPath copiado');
+      copy.title = 'XPath copiado';
+      status.textContent = '';
+      feedbackTimer = setTimeout(showCopyIcon, 1200);
+    } else {
+      showCopyIcon();
+      status.textContent = ' Não foi possível copiar. Selecione o XPath e copie manualmente.';
+    }
+  };
+  copy.addEventListener('click', copyXPath);
+  expression.addEventListener('click', copyXPath);
+  expression.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    copyXPath();
+  });
+  const labels = [legacy ? 'Via addon' : {
+    confirmed: 'Conferido no servidor',
+    divergent: 'Não confirmado no servidor',
+    unavailable: 'Sem conferência no servidor',
+  }[xpath.server]];
+  if (xpath.matches != null) labels.push(xpath.matches + (xpath.matches === 1 ? ' ocorrência' : ' ocorrências'));
+  if (ambiguous) labels.push('Campo ambíguo');
+  xrayText(parent, 'div', labels.join(' · '), 'muted');
+  const details = xrayText(parent, 'details', '');
+  xrayText(details, 'summary', 'Detalhes');
+  xrayText(details, 'p', legacy ?
+    'XPath gerado pelo nome do campo. O addon validou o elemento, mas não contou as ocorrências deste seletor.' :
+    xpath.matches + (xpath.matches === 1 ? ' correspondência' : ' correspondências') + ' no XML recomposto. ' + ({
+      confirmed: 'Conferido na arquitetura retornada pelo servidor.',
+      divergent: 'Não confirmado na arquitetura do servidor; a estrutura ou correspondência difere.',
+      unavailable: 'Arquitetura do servidor indisponível para conferência.',
+    }[xpath.server]), 'muted');
+  if (view) xrayText(details, 'div', 'View: ' + (view.xml_id || ((view.name || 'View') + ' (ID ' + view.id + ')')), 'muted');
+  if (ambiguous) xrayText(details, 'p', 'Este XPath pode identificar mais de um campo; a correspondência com o campo da tela permanece ambígua.', 'muted');
+  xrayText(details, 'p', 'A aplicação numa view herdada depende das dependências do módulo e da ordem de herança.', 'muted');
+}
+
+function xrayLegacyFieldXPath(result, info) {
+  const name = result.target.field || result.target.name || info.field;
+  if (!name) return null;
+  const lineage = result.breadcrumbs || [];
+  let subviewIndex = -1;
+  for (let i = lineage.length - 2; i >= 0; i--) {
+    if (['list', 'tree'].includes(lineage[i].tag)) { subviewIndex = i; break; }
+  }
+  let parentField = null;
+  for (let i = subviewIndex - 1; i >= 0; i--) {
+    if (lineage[i].tag === 'field' && lineage[i].name) { parentField = lineage[i].name; break; }
+  }
+  return {
+    expression: xrayFieldXPathExpression(name, parentField ? {
+      field: parentField, tag: lineage[subviewIndex].tag,
+    } : null),
+    strategy: 'attribute', matches: null, server: 'unavailable',
+  };
+}
+
 async function xrayShowViewPanel(info) {
   const request = ++xrayPanelRequest;
   if (info.node) xrayShowHighlight(info.node, true);
@@ -390,6 +514,9 @@ async function xrayShowViewPanel(info) {
   }
   xrayText(body, 'p', result.view.xml_id || result.view.name);
   xrayText(body, 'pre', result.target.path, 'muted');
+  if (result.target.tag === 'field') {
+    xrayRenderXPath(body, xrayLegacyFieldXPath(result, info), result.view, false, true);
+  }
   if (result.breadcrumbs?.length) {
     const breadcrumbs = xrayText(body, 'div', '', 'breadcrumbs');
     for (const item of result.breadcrumbs) {
@@ -490,6 +617,8 @@ function xrayRenderLocation(parent, resolved, index) {
 }
 
 async function xrayRenderCandidate(parent, result, candidate, request, heading) {
+  if (result.target.tag === 'field') xrayRenderXPath(parent, candidate.xpath,
+    result.views[result.loadedId], result.certainty === 'ambígua');
   const created = candidate.created;
   const view = created ? result.views[created.viewId] : null;
   const module = view?.xml_id ? view.xml_id.split('.', 1)[0] : null;
@@ -531,7 +660,10 @@ async function xrayRenderCandidate(parent, result, candidate, request, heading) 
 async function xrayRenderOrigin(body, result, request) {
   xrayText(body, 'div', XRAY_CERTAINTY_LABEL[result.certainty] || result.certainty, 'muted');
   for (const warning of result.warnings || []) xrayText(body, 'p', warning, 'muted');
-  if (!result.candidates.length) return;
+  if (!result.candidates.length) {
+    if (result.target.tag === 'field') xrayRenderXPath(body, null);
+    return;
+  }
 
   if (result.candidates.length === 1) {
     await xrayRenderCandidate(body, result, result.candidates[0], request, 'h3');

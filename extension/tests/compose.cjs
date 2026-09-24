@@ -34,6 +34,8 @@ function view(id, arch, extra = {}) {
     assert.equal(result.candidates[0].events.length, 1, 'city has one later change');
     assert.equal(result.candidates[0].events[0].viewId, 3);
     assert.equal(result.candidates[0].events[0].changes.required.after, '1');
+    assert.equal(result.candidates[0].xpath.expression, "//field[@name='city']");
+    assert.equal(result.candidates[0].xpath.strategy, 'attribute');
     assert.equal(result.certainty, 'provável', 'without a server arch to cross-check, certainty stays "provável"');
 
     // 2. Repeated field name inside a notebook page: occurrence disambiguates.
@@ -62,6 +64,7 @@ function view(id, arch, extra = {}) {
     ], { tag: 'field', name: 'full_name' }]);
     assert.equal(result.candidates[0].created.viewId, 2);
     assert.equal(result.candidates[0].created.via, 'replace');
+    assert.equal(result.candidates[0].xpath.expression, "//field[@name='full_name']");
 
     // 5. replace with $0: the copy of the original node carries its own history forward.
     result = await run(([views, target]) => xrayResolveOrigin({ loadedId: 1, views, serverArch: null, target }), [[
@@ -80,6 +83,7 @@ function view(id, arch, extra = {}) {
     assert.equal(result.candidates[0].created.viewId, 1);
     assert.equal(result.candidates[0].events.at(-1).op, 'move');
     assert.equal(result.candidates[0].events.at(-1).viewId, 2);
+    assert.equal(result.candidates[0].xpath.expression, "//field[@name='street']");
 
     // 7. Successive inheritance: grandchild view (primary, in the chain) adds
     //    a field, and an extension of the child changes it afterwards.

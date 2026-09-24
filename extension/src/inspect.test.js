@@ -34,6 +34,16 @@ const ordinary = { closest: selector => selector.startsWith('.o_field_widget') ?
 } : null };
 assert.equal(context.xrayExtract(ordinary).model, 'action-279');
 assert.equal(context.xrayExtract(ordinary).field, 'street');
+const relationalField = { getAttribute: () => 'ordem_fornecimento_ids' };
+const listColumn = {
+  getAttribute: () => 'produto_id',
+  matches: selector => selector === 'button[name]' ? false : false,
+  parentElement: { closest: selector => selector === '.o_field_widget[name]' ? relationalField : null },
+  closest: selector => selector.startsWith('.o_field_widget[name],') ? listColumn : null,
+};
+const extractedColumn = context.xrayExtract(listColumn);
+assert.equal(extractedColumn.field, 'produto_id');
+assert.equal(extractedColumn.context.subview, 'ordem_fornecimento_ids');
 const groupNode = {
   firstElementChild: null,
   matches: selector => selector === '.o_inner_group, .o_group',

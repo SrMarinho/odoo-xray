@@ -106,6 +106,27 @@ extrator antigo continua disponível para addons anteriores, que precisam de
 
 ### Origem nas views
 
+Para campos, o painel inclui **XPath do campo**. Clique no próprio XPath ou
+no ícone de cópia ao lado para copiá-lo. Ambos aceitam ativação por teclado.
+O seletor usa sempre o nome técnico (`//field[@name='campo']`), independente
+da profundidade no XML. Campos invisíveis e subviews também entram na contagem
+de ocorrências exibida separadamente.
+
+Em colunas de listas relacionais, o contexto da subview faz parte do XPath:
+`//field[@name='linhas']/list/field[@name='coluna']`. Assim, a coluna não se
+confunde com um campo de mesmo nome no formulário principal ou em outra lista.
+
+A seção informa se o XPath foi validado apenas no XML recomposto ou também
+conferido na arquitetura retornada pelo servidor. Essa validação não elimina
+a ambiguidade entre o campo da tela e os candidatos: cada candidato mantém
+seu próprio seletor e os avisos de certeza. A aplicação numa view herdada
+depende das dependências do módulo e da ordem de herança. No fluxo com o addon
+legado, o painel gera o mesmo seletor pelo nome do campo; a contagem de
+ocorrências não fica disponível nesse fluxo.
+
+A cópia funciona sem a ponte local; se o navegador bloquear o clipboard e
+o fallback, o texto permanece disponível para seleção e cópia manual.
+
 No tooltip, **Ver origem na view** abre um painel com a origem exata do
 elemento na tela atual: módulo, XML ID, arquivo, linha e grau de certeza
 (exata, provável ou ambígua). Alterações feitas por views herdadas aparecem
@@ -158,6 +179,10 @@ Brave Flatpak bloqueia Native Messaging externo, o instalador também inicia
 uma ponte restrita a `127.0.0.1:17654`, autorizada apenas para os IDs informados.
 
 ## Testes
+
+- `extension/tests/xpath.cjs` — XPath, duplicidades, conferência no servidor,
+  painel, cópia e respostas antigas: `node extension/tests/xpath.cjs`.
+  Usa o mesmo ambiente Playwright do teste de composição.
 
 - `addon/xray/tests/test_xray.py` — `TransactionCase`, roda no Odoo.
 - `addon/xray/tests/test_views.py` — herança, permissões, identidade e linhas XML.

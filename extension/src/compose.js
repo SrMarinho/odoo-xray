@@ -306,6 +306,42 @@ function xrayCorrespond(serverRoot, serverNode, composedRoot) {
 
 // Full resolution for one rendered element.
 // views: every view read (with `excluded` flags), serverArch: arch from get_views.
+function xrayXPathLiteral(value) {
+  if (!value.includes("'")) return "'" + value + "'";
+  if (!value.includes('"')) return '"' + value + '"';
+  return 'concat(' + value.split("'").map((part) => "'" + part + "'").join(', "\'", ') + ')';
+}
+
+function xrayXPathMatches(root, expression) {
+  const result = root.ownerDocument.evaluate(expression, root.ownerDocument, null,
+    XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+  return Array.from({ length: result.snapshotLength }, (_, i) => result.snapshotItem(i));
+}
+
+function xrayFieldXPathExpression(name, subview = null) {
+  const field = "field[@name=" + xrayXPathLiteral(name) + ']';
+  if (!subview?.field || !subview.tag) return '//' + field;
+  return '//field[@name=' + xrayXPathLiteral(subview.field) + ']/' + subview.tag + '/' + field;
+}
+
+function xrayFieldXPath(root, node, serverRoot = null, serverNode = null) {
+  if (node.tagName !== 'field') return null;
+  const name = node.getAttribute('name');
+  if (!name) return null;
+  let subviewNode = node.parentElement;
+  while (subviewNode && !['list', 'tree'].includes(subviewNode.tagName)) subviewNode = subviewNode.parentElement;
+  let parentField = subviewNode?.parentElement;
+  while (parentField && parentField.tagName !== 'field') parentField = parentField.parentElement;
+  const expression = xrayFieldXPathExpression(name, parentField?.getAttribute('name') ? {
+    field: parentField.getAttribute('name'), tag: subviewNode.tagName,
+  } : null);
+  const matches = xrayXPathMatches(root, expression);
+  const serverMatches = serverRoot ? xrayXPathMatches(serverRoot, expression) : [];
+  return { expression, strategy: 'attribute', matches: matches.length,
+    server: !serverRoot ? 'unavailable' : serverNode && serverMatches.length === 1 &&
+      serverMatches[0] === serverNode ? 'confirmed' : 'divergent' };
+}
+
 function xrayResolveOrigin({ loadedId, views, serverArch, target }) {
   const { root, order } = xrayHierarchy(loadedId, views);
   const composed = xrayCompose(root, order);
@@ -313,15 +349,21 @@ function xrayResolveOrigin({ loadedId, views, serverArch, target }) {
   let certainty = composed.warnings.length ? 'provável' : 'exata';
   let candidates;
   let evidence;
+  let serverRoot = null;
+  const serverNodes = new Map();
   if (serverArch) {
-    const serverRoot = xrayParseArch(serverArch);
+    serverRoot = xrayParseArch(serverArch);
     const match = xrayMatch(serverRoot, target);
     evidence = match.evidence;
     if (!match.nodes.length) {
       return { certainty: 'desconhecida', applied: [root, ...order].map((v) => v.id), candidates: [], evidence,
         warnings: [...warnings, 'Elemento não encontrado na arquitetura retornada pelo servidor.'] };
     }
-    const mapped = (match.chosen ? [match.chosen] : match.nodes).map((node) => xrayCorrespond(serverRoot, node, composed.root));
+    const mapped = (match.chosen ? [match.chosen] : match.nodes).map((node) => {
+      const correspondence = xrayCorrespond(serverRoot, node, composed.root);
+      if (correspondence.exact && correspondence.node) serverNodes.set(correspondence.node, node);
+      return correspondence;
+    });
     if (!match.chosen) certainty = 'ambígua';
     if (mapped.some((m) => !m.exact)) {
       if (certainty === 'exata') certainty = 'provável';
@@ -345,6 +387,7 @@ function xrayResolveOrigin({ loadedId, views, serverArch, target }) {
     applied: [root, ...order].map((view) => view.id),
     candidates: candidates.map((node) => ({
       signature: xraySignature(node),
+      xpath: xrayFieldXPath(composed.root, node, serverRoot, serverNodes.get(node)),
       created: composed.meta.get(node)?.created || null,
       replaced: composed.meta.get(node)?.replaced || null,
       events: composed.meta.get(node)?.events || [],
