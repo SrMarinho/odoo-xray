@@ -262,35 +262,84 @@ def locate_view(message):
     return {'matches': matches}
 
 
-def handle_request(message):
-    if message.get('action') in ('locate_field', 'locate_method'):
+class SourceLocator:
+    """Application boundary for source-code lookup operations."""
+
+    def locate_declaration(self, message):
         return declarations(message)
-    if message.get('action') == 'locate_view':
+
+    def locate_view(self, message):
         return locate_view(message)
-    if message.get('action') == 'resolve_file':
+
+    def resolve_file(self, message):
         return resolve_file(message)
-    file_path, line = validate_request(message)
-    return {'ok': True, 'command': open_editor(file_path, line)}
+
+
+class EditorService:
+    """Validates editor requests before delegating to the platform adapter."""
+
+    def open(self, message):
+        file_path, line = validate_request(message)
+        return {'ok': True, 'command': open_editor(file_path, line)}
+
+
+class XrayApplication:
+    """Routes protocol actions without knowing HTTP or stdio transport details."""
+
+    def __init__(self, source_locator=None, editor=None):
+        self.source_locator = source_locator or SourceLocator()
+        self.editor = editor or EditorService()
+
+    def handle(self, message):
+        action = message.get('action')
+        if action in ('locate_field', 'locate_method'):
+            return self.source_locator.locate_declaration(message)
+        if action == 'locate_view':
+            return self.source_locator.locate_view(message)
+        if action == 'resolve_file':
+            return self.source_locator.resolve_file(message)
+        return self.editor.open(message)
+
+
+_APPLICATION = XrayApplication()
+
+
+def handle_request(message):
+    """Compatibility facade shared by the HTTP and Native Messaging adapters."""
+    return _APPLICATION.handle(message)
+
+
+class NativeMessagingProtocol:
+    max_message_size = 1024 * 1024
+
+    def read(self, stream):
+        raw_length = stream.read(4)
+        if len(raw_length) != 4:
+            raise ValueError('mensagem sem tamanho válido')
+        length = struct.unpack('=I', raw_length)[0]
+        if length > self.max_message_size:
+            raise ValueError('mensagem grande demais')
+        payload = stream.read(length)
+        if len(payload) != length:
+            raise ValueError('mensagem incompleta')
+        return json.loads(payload.decode('utf-8'))
+
+    def write(self, stream, message):
+        payload = json.dumps(message).encode('utf-8')
+        stream.write(struct.pack('=I', len(payload)))
+        stream.write(payload)
+        stream.flush()
+
+
+_NATIVE_PROTOCOL = NativeMessagingProtocol()
 
 
 def read_message(stream):
-    raw_length = stream.read(4)
-    if len(raw_length) != 4:
-        raise ValueError('mensagem sem tamanho válido')
-    length = struct.unpack('=I', raw_length)[0]
-    if length > 1024 * 1024:
-        raise ValueError('mensagem grande demais')
-    payload = stream.read(length)
-    if len(payload) != length:
-        raise ValueError('mensagem incompleta')
-    return json.loads(payload.decode('utf-8'))
+    return _NATIVE_PROTOCOL.read(stream)
 
 
 def write_message(stream, message):
-    payload = json.dumps(message).encode('utf-8')
-    stream.write(struct.pack('=I', len(payload)))
-    stream.write(payload)
-    stream.flush()
+    _NATIVE_PROTOCOL.write(stream, message)
 
 
 def validate_request(message):

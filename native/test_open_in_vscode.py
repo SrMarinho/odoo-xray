@@ -11,6 +11,28 @@ import open_in_vscode
 
 
 class NativeHostTest(unittest.TestCase):
+    def test_application_routes_actions_through_injected_services(self):
+        class Sources:
+            def locate_declaration(self, message):
+                return {'route': 'declaration', 'action': message['action']}
+
+            def locate_view(self, _message):
+                return {'route': 'view'}
+
+            def resolve_file(self, _message):
+                return {'route': 'file'}
+
+        class Editor:
+            def open(self, _message):
+                return {'route': 'editor'}
+
+        application = open_in_vscode.XrayApplication(Sources(), Editor())
+        self.assertEqual(application.handle({'action': 'locate_field'}),
+                         {'route': 'declaration', 'action': 'locate_field'})
+        self.assertEqual(application.handle({'action': 'locate_view'}), {'route': 'view'})
+        self.assertEqual(application.handle({'action': 'resolve_file'}), {'route': 'file'})
+        self.assertEqual(application.handle({'action': 'open'}), {'route': 'editor'})
+
     def test_finds_field_and_method_without_odoo_module(self):
         with tempfile.TemporaryDirectory() as directory:
             model_dir = os.path.join(directory, 'addons', 'custom', 'models')
