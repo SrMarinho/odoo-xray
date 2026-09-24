@@ -55,16 +55,41 @@ assert.equal(extractedGroup.field, null);
   const listeners = {};
   const requests = [];
   const rpcBodies = [];
+  const resolveOriginCalls = [];
+  let capture = null; // set per scenario; null simulates hook.js finding nothing
+  const fakeWindow = {
+    addEventListener: (name, fn) => { (listeners[name] ||= []).push(fn); },
+    removeEventListener: (name, fn) => { listeners[name] = (listeners[name] || []).filter((f) => f !== fn); },
+    postMessage: (data) => {
+      if (data?.type !== 'views?') return;
+      queueMicrotask(() => (listeners.message || []).slice().forEach((fn) => fn({
+        source: fakeWindow, data: { source: 'odoo-xray', type: 'views', id: data.id, captured: capture || [] },
+      })));
+    },
+  };
   const rpcContext = vm.createContext({
-    window: { addEventListener: (name, fn) => { listeners[name] = fn; } },
+    window: fakeWindow,
+    setTimeout, clearTimeout,
+    // compose.js's real algorithm is exercised by extension/tests/compose.cjs
+    // against a real DOM; here only rpc.js's own plumbing is under test.
+    xrayResolveOrigin: (args) => {
+      resolveOriginCalls.push(args);
+      return { certainty: 'exata', evidence: [], warnings: [], applied: [args.loadedId],
+        candidates: [{ signature: 'form/field[name]', created: null, replaced: null, events: [] }] };
+    },
     chrome: { runtime: { sendMessage: (message, callback) => { requests.push(message); callback({ locations: [] }); } } },
     fetch: async (_url, options) => {
       calls++;
       const body = JSON.parse(options.body);
       rpcBodies.push(body);
-      const result = body.params.model === 'ir.ui.view' ? [] :
-        body.params.model === 'ir.actions.act_window' ? [{ res_model: 'res.partner' }] :
-        { name: { type: 'char' } };
+      const { model, method } = body.params;
+      let result;
+      if (model === 'ir.actions.act_window') result = [{ id: 279, res_model: 'res.partner', views: [], context: {} }];
+      else if (model === 'ir.ui.view') result = [{ id: 42, name: 'v', xml_id: 'base.view_form', inherit_id: false,
+        priority: 16, mode: 'primary', active: true, arch: '<form/>', arch_fs: 'base/views/x.xml', model: 'res.partner' }];
+      else if (model === 'ir.module.module') result = [{ name: 'base', state: 'installed' }];
+      else if (method === 'get_views') result = { views: { form: { id: 42, arch: '<form/>', model: 'res.partner' } } };
+      else result = { name: { type: 'char' } };
       return { ok: true, json: async () => ({ result }) };
     },
   });
@@ -74,17 +99,32 @@ assert.equal(extractedGroup.field, null);
   await rpcContext.xrayLocateField('res.partner', 'name');
   assert.equal(calls, 2, 'settled data is not reused across session changes');
   assert.equal(requests[0].request.action, 'locate_field');
+
   const info = { model: 'res.partner', field: 'name' };
-  await rpcContext.xrayLocateView(info);
-  await rpcContext.xrayLocateView(info);
-  assert.equal(calls, 4, 'views are refreshed on every opening');
+  capture = [{ model: 'res.partner', result: { form: { id: 42, arch: '<form/>' } } }];
+  let result = await rpcContext.xrayLocateView(info);
+  assert.equal(result.loadedId, 42, 'the captured get_views response supplies the loaded view id');
+  assert.equal(resolveOriginCalls.at(-1).loadedId, 42);
+  assert.ok(!rpcBodies.some((b) => b.params.method === 'get_views'), 'a capture skips a fresh get_views call');
+  assert.equal(result.warnings.length, 0);
+
+  capture = null;
+  result = await rpcContext.xrayLocateView(info);
+  assert.equal(result.loadedId, 42, 'without a capture, get_views is called directly');
+  assert.ok(rpcBodies.some((b) => b.params.method === 'get_views'));
+  assert.ok(result.warnings.some((w) => w.includes('Nenhuma chamada get_views capturada')));
+
+  await rpcContext.xrayLocateView({ viewId: 7, identity: { path: '/form' } });
+  assert.deepEqual(rpcBodies.at(-1).params, { model: 'xray.xray', method: 'locate_view_node', args: [7, { path: '/form' }], kwargs: {} });
+
   await rpcContext.xrayLocateMethod('res.partner', 'write');
   assert.equal(requests.at(-1).request.action, 'locate_method');
+  await rpcContext.xrayLocateViewSource({ xml_id: 'base.view_form', arch_fs: 'x.xml', arch: '<form/>' }, [0]);
+  assert.equal(requests.at(-1).request.action, 'locate_view');
+
   assert.equal(await rpcContext.xrayResolveModel('contacts'), 'res.partner');
-  assert.equal(calls, 5, 'an action URL resolves through the standard Odoo API');
   assert.equal(await rpcContext.xrayResolveModel('action-279'), 'res.partner');
-  assert.equal(calls, 6, 'an action-ID URL resolves through the standard Odoo API');
-  assert.equal(rpcBodies.at(-1).params.args[0][0][0], 'id');
-  assert.equal(rpcBodies.at(-1).params.args[0][0][2], 279);
+  assert.equal(rpcBodies.filter((b) => b.params.model === 'ir.actions.act_window').at(-1).params.args[0][0][0], 'id');
+  assert.equal(rpcBodies.filter((b) => b.params.model === 'ir.actions.act_window').at(-1).params.args[0][0][2], 279);
   console.log('inspect.test.js: OK');
 })().catch(error => { console.error(error); process.exitCode = 1; });

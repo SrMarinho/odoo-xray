@@ -15,7 +15,8 @@ def build(destination=DEFAULT_DESTINATION):
     destination = Path(destination)
     destination.mkdir(parents=True, exist_ok=True)
     for relative in ('src/background.js', 'src/content.js', 'src/extract.js',
-                     'src/rpc.js', 'options/options.html', 'options/options.js'):
+                     'src/rpc.js', 'src/hook.js', 'src/compose.js',
+                     'options/options.html', 'options/options.js'):
         target = destination / relative
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(SOURCE / relative, target)
