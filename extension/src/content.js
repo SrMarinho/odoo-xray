@@ -342,6 +342,7 @@ function xrayGetPanel() {
     .muted { color:#aaa; } .error { color:#f48771; }
     .xray-clickable { color:#4ec9b0; cursor:pointer; } .xray-clickable:hover { text-decoration:underline; }
     pre { white-space:pre-wrap; overflow-wrap:anywhere; margin:4px 0; font-size:12px; }
+    details { margin-top:8px; } summary { cursor:pointer; color:#9cdcfe; }
   `;
   shadow.appendChild(style);
   const box = document.createElement('aside');
@@ -383,8 +384,8 @@ async function xrayShowViewPanel(info) {
   if (request !== xrayPanelRequest) return;
   body.replaceChildren();
   if (result.error) { xrayText(body, 'p', result.error, 'error'); return; }
-  if (result.views) {
-    xrayRenderStandardViews(body, result.views, info);
+  if (result.candidates) {
+    await xrayRenderOrigin(body, result, request);
     return;
   }
   xrayText(body, 'p', result.view.xml_id || result.view.name);
@@ -442,36 +443,126 @@ async function xrayShowViewPanel(info) {
   }
 }
 
-function xrayRenderStandardViews(body, views, info) {
-  xrayText(body, 'p', 'Views do modelo lidas pelas APIs padrão do Odoo. A aplicação exata de cada operação de herança não é exposta pela API.', 'muted');
-  const symbol = info.name || info.field || info.label;
-  const candidates = views.filter((view) => {
-    if (!symbol) return true;
-    const xml = view.arch_db || '';
-    return xml.includes('name="' + symbol + '"') || xml.includes("name='" + symbol + "'") ||
-      xml.includes('@name=&quot;' + symbol + '&quot;');
-  });
-  xrayText(body, 'h3', 'Views que mencionam ' + (symbol || info.model));
-  if (!candidates.length) xrayText(body, 'p', 'Nenhuma definição correspondente encontrada nas views acessíveis.', 'muted');
-  for (const view of candidates) {
-    const entry = xrayText(body, 'div', '', 'entry');
-    xrayText(entry, 'strong', view.key || view.name);
-    xrayText(entry, 'div', 'ID ' + view.id + ' · prioridade ' + view.priority +
-      (view.inherit_id ? ' · herda ID ' + view.inherit_id[0] : ' · view base'), 'muted');
-    if (view.arch_fs) xrayText(entry, 'div', 'Arquivo declarado: ' + view.arch_fs, 'muted');
-    const snippet = (view.arch_db || '').split('\n').find((line) => symbol && line.includes(symbol));
-    if (snippet) xrayText(entry, 'pre', snippet.trim());
+const XRAY_CERTAINTY_LABEL = {
+  exata: 'Origem exata', 'provável': 'Origem provável',
+  'ambígua': 'Origem ambígua — múltiplas correspondências', desconhecida: 'Origem não determinada',
+};
+
+// Asks the native host for the exact declaration line(s) of a view's own
+// node indexes. A view with no xml_id/arch_fs (Studio, direct database
+// customization) or no configured mapping degrades to a clear explanation
+// instead of a guessed line — see README "Origem nas views".
+async function xrayResolveViewLocation(view, indexes) {
+  if (!view) return { file: null, warning: 'View não encontrada nesta consulta.' };
+  if (!view.arch_fs) {
+    return { file: null, warning: view.xml_id ?
+      'Sem arquivo declarado para esta view (arch_fs ausente).' :
+      'View sem XML ID: customização direta no banco (Studio ou similar).' };
   }
-  if (info.tag === 'button' && info.name) {
-    const methodBody = xrayText(body, 'div', 'Buscando método Python…', 'muted');
-    xrayLocateMethod(info.model, info.name).then((result) => {
-      methodBody.replaceChildren();
-      for (const location of result.overrides || []) {
-        const entry = xrayText(methodBody, 'div', '', 'entry');
-        xrayText(entry, 'strong', location.module + ' — ' + location.klass);
-        xraySourceLink(entry, location);
-      }
-    });
+  const res = await xrayLocateViewSource(view, [...new Set(indexes)]);
+  if (res.error) return { file: null, warning: res.error };
+  if (!res.matches?.length) {
+    return { file: null, warning: 'Arquivo declarado (' + view.arch_fs + ') não encontrado nos diretórios mapeados.' };
+  }
+  if (res.matches.length > 1) return { ambiguous: true, matches: res.matches };
+  const match = res.matches[0];
+  return { file: match.file, line: match.record_line, exact: match.exact, indexLines: match.lines };
+}
+
+function xrayRenderLocation(parent, resolved, index) {
+  if (resolved.ambiguous) {
+    xrayText(parent, 'div', 'O arquivo tem mais de um registro para esta view; correspondência ambígua.', 'muted');
+    for (const match of resolved.matches) {
+      const line = match.exact ? (match.lines[String(index)] ?? match.record_line) : match.record_line;
+      xraySourceLink(parent, { file: match.file, line, host: true });
+    }
+    return;
+  }
+  if (!resolved.file) {
+    xrayText(parent, 'div', resolved.warning || 'Origem no banco ou sem correspondência segura com arquivo.', 'muted');
+    return;
+  }
+  if (!resolved.exact) {
+    xrayText(parent, 'div', 'O arquivo local diverge da view no banco; linha do registro, não do elemento exato.', 'muted');
+  }
+  const line = resolved.exact ? (resolved.indexLines?.[String(index)] ?? resolved.line) : resolved.line;
+  xraySourceLink(parent, { file: resolved.file, line, host: true });
+}
+
+async function xrayRenderCandidate(parent, result, candidate, request, heading) {
+  const created = candidate.created;
+  const view = created ? result.views[created.viewId] : null;
+  const module = view?.xml_id ? view.xml_id.split('.', 1)[0] : null;
+  xrayText(parent, heading, 'Criado em ' + (view?.xml_id || view?.name || 'view desconhecida') +
+    (module ? ' (módulo ' + module + ')' : ''));
+  if (candidate.replaced) {
+    const replacedView = result.views[candidate.replaced.viewId];
+    xrayText(parent, 'div', 'Substitui elemento criado em ' + (replacedView?.xml_id || replacedView?.name || '?'), 'muted');
+  }
+  const indexes = [created?.index, candidate.replaced?.index, ...candidate.events.map((e) => e.index)].filter((i) => i != null);
+  const location = xrayText(parent, 'div', 'Localizando arquivo…', 'muted');
+  const resolved = await xrayResolveViewLocation(view, indexes);
+  if (request !== xrayPanelRequest) return;
+  location.remove();
+  xrayRenderLocation(parent, resolved, created?.index);
+
+  if (!candidate.events.length) return;
+  const details = document.createElement('details');
+  const summary = document.createElement('summary');
+  summary.textContent = 'Alterações (' + candidate.events.length + ')';
+  details.appendChild(summary);
+  parent.appendChild(details);
+  for (const event of candidate.events) {
+    const entry = xrayText(details, 'div', '', 'entry');
+    const eventView = result.views[event.viewId];
+    xrayText(entry, 'strong', (event.op === 'attributes' ? 'atributo' : event.op) +
+      ' — ' + (eventView?.xml_id || eventView?.name || event.viewId));
+    for (const [name, change] of Object.entries(event.changes || {})) {
+      xrayText(entry, 'pre', name + ': ' + JSON.stringify(change.before) + ' → ' + JSON.stringify(change.after));
+    }
+    const eventLocation = xrayText(entry, 'div', 'Localizando…', 'muted');
+    const eventResolved = await xrayResolveViewLocation(eventView, [event.index]);
+    if (request !== xrayPanelRequest) return;
+    eventLocation.remove();
+    xrayRenderLocation(entry, eventResolved, event.index);
+  }
+}
+
+async function xrayRenderOrigin(body, result, request) {
+  xrayText(body, 'div', XRAY_CERTAINTY_LABEL[result.certainty] || result.certainty, 'muted');
+  for (const warning of result.warnings || []) xrayText(body, 'p', warning, 'muted');
+  if (!result.candidates.length) return;
+
+  if (result.candidates.length === 1) {
+    await xrayRenderCandidate(body, result, result.candidates[0], request, 'h3');
+    if (result.target.tag === 'button' && result.target.name) await xrayRenderMethod(body, result, request);
+    return;
+  }
+
+  xrayText(body, 'h3', 'Candidatos (' + result.candidates.length + ')');
+  if (result.evidence?.length) xrayText(body, 'p', 'Correspondência: ' + result.evidence.join(', '), 'muted');
+  for (const candidate of result.candidates) {
+    const entry = xrayText(body, 'div', '', 'entry');
+    await xrayRenderCandidate(entry, result, candidate, request, 'strong');
+  }
+}
+
+async function xrayRenderMethod(body, result, request) {
+  xrayText(body, 'h3', 'Método Python ' + result.target.name);
+  const methodBody = xrayText(body, 'div', 'Buscando método Python…', 'muted');
+  const method = await xrayLocateMethod(result.model, result.target.name);
+  if (request !== xrayPanelRequest) return;
+  methodBody.replaceChildren();
+  if (method.error) {
+    xrayText(methodBody, 'p', method.error, 'error');
+  } else if (!method.overrides?.length) {
+    xrayText(methodBody, 'p', 'Método sem origem Python localizável.', 'muted');
+  } else {
+    for (const location of method.overrides) {
+      const entry = xrayText(methodBody, 'div', '', 'entry');
+      xrayText(entry, 'strong', (location.module || 'core') + ' — ' + location.klass);
+      xraySourceLink(entry, location);
+    }
   }
 }
 

@@ -31,9 +31,13 @@ if (!url || !db?.startsWith('xray_test_')) throw new Error('Use XRAY_TEST_URL an
         onChanged: { addListener: () => {} },
       };
       chrome.runtime = { sendMessage: (message, callback) => callback(message.type === 'xray.localRequest'
-        ? { locations: [{ file: '/mapped/models/partner.py', line: 7, module: 'test', klass: 'Partner', host: true }] }
+        ? { locations: [{ file: '/mapped/models/partner.py', line: 7, module: 'test', klass: 'Partner', host: true }],
+          matches: [{ file: '/mapped/views/res_partner_views.xml', record_line: 3, exact: true, lines: { 0: 4 } }] }
         : {}) };
     });
+    // hook.js must run before any page script (document_start, MAIN world) to
+    // capture the get_views call the Odoo client makes on the initial load.
+    await page.addInitScript({ path: path.join(__dirname, '../src/hook.js') });
     await page.goto(url + '/odoo/res.partner/1', { waitUntil: 'domcontentloaded' });
     const field = page.locator('.o_field_widget[name="name"]').first();
     await field.waitFor();
@@ -41,7 +45,7 @@ if (!url || !db?.startsWith('xray_test_')) throw new Error('Use XRAY_TEST_URL an
     await page.evaluate(() => document.querySelectorAll('*').forEach(node =>
       [...node.attributes].filter(attr => attr.name.startsWith('data-xray-'))
         .forEach(attr => node.removeAttribute(attr.name))));
-    for (const file of ['rpc.js', 'extract.js', 'content.js']) {
+    for (const file of ['rpc.js', 'compose.js', 'extract.js', 'content.js']) {
       await page.addScriptTag({ path: path.join(__dirname, '../src', file) });
     }
     await page.keyboard.down('Alt');
@@ -55,9 +59,9 @@ if (!url || !db?.startsWith('xray_test_')) throw new Error('Use XRAY_TEST_URL an
     assert.equal(Math.round(sameAnchor.x), Math.round(initial.x), 'tooltip must not follow the mouse');
     await tooltip.getByRole('button', { name: 'Ver origem na view' }).click();
     const panel = page.locator('#xray-panel-host');
-    await panel.getByRole('heading', { name: 'Views que mencionam name' }).waitFor();
+    await panel.getByRole('heading', { name: 'res.partner.name' }).waitFor();
     assert.equal(await panel.locator('.error').count(), 0);
-    assert.match(await panel.locator('aside').innerText(), /Views que mencionam name/);
+    assert.match(await panel.locator('aside').innerText(), /Origem (exata|prov[aá]vel)/);
     // Validate click routing without launching an external editor during tests.
     await page.evaluate(() => { window.xrayOpened = []; xrayOpenInEditor = (file, line) => window.xrayOpened.push({ file, line }); });
     await field.hover();

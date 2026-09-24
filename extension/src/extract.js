@@ -31,6 +31,44 @@ function xrayFindBadgeInfo(startEl) {
   return null;
 }
 
+// Where in the rendered form `node` sits: which x2many subview (if any),
+// notebook page and group title contain it. Used to disambiguate a field or
+// label that the arch declares more than once (e.g. the same field shown in
+// two groups, or the same tag repeated across notebook pages).
+function xrayNodeContext(node) {
+  const subviewAncestor = node.parentElement?.closest?.('.o_field_widget[name]');
+  const subview = subviewAncestor ? subviewAncestor.getAttribute('name') : null;
+  const pane = node.closest?.('.tab-pane');
+  let page = null;
+  if (pane?.id) {
+    const notebook = pane.closest('.o_notebook');
+    const escaped = globalThis.CSS?.escape ? CSS.escape(pane.id) : pane.id;
+    const link = notebook?.querySelector('[aria-controls="' + escaped + '"]');
+    if (link) page = { name: link.getAttribute('name') || null, label: link.textContent.trim() };
+  }
+  const groupAncestor = node.closest?.('.o_inner_group, .o_group');
+  const group = groupAncestor ?
+    (groupAncestor.firstElementChild?.querySelector?.('.o_horizontal_separator')?.textContent.trim() || null) : null;
+  return { subview, group, page };
+}
+
+// Index of `node` among every rendered occurrence of the same field/name in
+// the same subview+page+group scope — the same disambiguation Odoo's own
+// compiler has no name for, needed only when more than one candidate remains.
+// Degrades to "unknown" rather than throwing when the DOM around `node`
+// doesn't support querySelectorAll (e.g. a synthetic/test element).
+function xrayOccurrence(node, selector, context) {
+  const scope = node.ownerDocument?.querySelectorAll?.(selector);
+  if (!scope) return { occurrence: null, occurrenceCount: null };
+  const sameScope = [...scope].filter((candidate) => {
+    const other = xrayNodeContext(candidate);
+    return other.subview === context.subview && other.page?.name === context.page?.name &&
+      other.group === context.group;
+  });
+  const index = sameScope.indexOf(node);
+  return { occurrence: index === -1 ? null : index, occurrenceCount: sameScope.length };
+}
+
 function xrayExtract(el) {
   if (!el) return null;
 
@@ -62,8 +100,11 @@ function xrayExtract(el) {
     const field = widget.getAttribute('name');
     if (field) {
       const button = widget.matches('button[name]');
+      const tag = button ? 'button' : 'field';
+      const context = xrayNodeContext(widget);
+      const occurrence = xrayOccurrence(widget, '.o_field_widget[name="' + field + '"], button[name="' + field + '"]', context);
       return { model: routeModel, field: button ? null : field, name: field,
-        tag: button ? 'button' : 'field', type: null, widget: null, node: widget };
+        tag, type: null, widget: null, node: widget, context, ...occurrence };
     }
   }
 
@@ -74,8 +115,12 @@ function xrayExtract(el) {
     const input = label.ownerDocument?.getElementById(label.getAttribute('for'));
     const labelWidget = input?.closest('.o_field_widget[name]');
     const field = labelWidget?.getAttribute('name');
-    if (field) return { model: routeModel, field, name: field, tag: 'field',
-      label: label.textContent.trim(), type: null, widget: null, node: label };
+    if (field) {
+      const context = xrayNodeContext(labelWidget);
+      const occurrence = xrayOccurrence(labelWidget, '.o_field_widget[name="' + field + '"]', context);
+      return { model: routeModel, field, name: field, tag: 'field',
+        label: label.textContent.trim(), type: null, widget: null, node: label, context, ...occurrence };
+    }
   }
 
   // Group titles and tabs are real view nodes, but Odoo's compiler removes
@@ -92,7 +137,8 @@ function xrayExtract(el) {
 
   const tab = el.closest?.('.o_notebook a.nav-link[role="tab"]');
   if (tab && routeModel) return { model: routeModel, field: null,
-    name: tab.getAttribute('name'), tag: 'page', label: tab.textContent.trim(), node: tab };
+    name: tab.getAttribute('name'), tag: 'page', label: tab.textContent.trim(), node: tab,
+    context: xrayNodeContext(tab) };
 
   const heading = el.closest?.('h1, h2, h3, h4, h5, h6');
   if (heading && routeModel) return { model: routeModel, field: null,
@@ -102,7 +148,8 @@ function xrayExtract(el) {
   if (group && routeModel) {
     const title = group.firstElementChild?.matches('.o_cell') ? null :
       group.firstElementChild?.querySelector('.o_horizontal_separator')?.textContent.trim() || null;
-    return { model: routeModel, field: null, name: null, tag: 'group', label: title, node: group };
+    const context = xrayNodeContext(group.parentElement || group);
+    return { model: routeModel, field: null, name: null, tag: 'group', label: title, node: group, context };
   }
 
   const notebook = el.closest?.('.o_notebook');

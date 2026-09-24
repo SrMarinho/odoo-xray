@@ -6,12 +6,12 @@ Links de arquivo abrem no VS Code na linha correta. O fluxo principal usa as
 APIs padrão do Odoo e uma ponte local; nenhum módulo X-Ray precisa ser
 instalado no banco ou injetado no projeto Odoo.
 
-O host local lê os arquivos Python nos diretórios configurados em Options e
-encontra declarações de campo e método por análise de sintaxe. A extensão
-consulta `fields_get` e `ir.ui.view` pela sessão do navegador. Na inspeção
-sem addon, as views exibidas são candidatas que mencionam o elemento; a API
-padrão não informa a sequência exata de alterações da herança nem fornece
-um vínculo seguro entre cada elemento DOM e sua linha XML.
+O host local lê os arquivos Python e XML nos diretórios configurados em
+Options e encontra declarações de campo, método e view por análise de
+sintaxe. A extensão consulta `fields_get`, `get_views` e `ir.ui.view` pela
+sessão do navegador e recompõe a herança da view no próprio navegador
+(regras do Odoo 19), sem depender de um addon instalado. Ver "Origem nas
+views" para os detalhes e limitações desse cálculo.
 
 ## Addon (`addon/xray/`)
 
@@ -106,18 +106,35 @@ extrator antigo continua disponível para addons anteriores, que precisam de
 
 ### Origem nas views
 
-No tooltip, **Ver origem na view** abre um painel com as views que mencionam
-o elemento. O módulo opcional ainda pode produzir marcadores para grupos,
-abas e outros elementos, mas a extensão não depende deles. Em botões
-`type="object"`, o painel busca as declarações do método Python no código
-local configurado.
+No tooltip, **Ver origem na view** abre um painel com a origem exata do
+elemento na tela atual: módulo, XML ID, arquivo, linha e grau de certeza
+(exata, provável ou ambígua). Alterações feitas por views herdadas aparecem
+num histórico recolhível ("Alterações"), cada uma com seu próprio link para
+o editor. O módulo opcional ainda pode produzir marcadores mais precisos
+para grupos, abas e outros elementos, mas a extensão não depende dele. Em
+botões `type="object"`, o painel busca as declarações do método Python no
+código local configurado.
 
-Sem addon, o painel lista as views acessíveis que mencionam o elemento e
-mostra a cadeia de herança declarada. O caminho `arch_fs` aparece como
-referência; a extensão não inventa uma linha de XML. A localização Python
-é calculada a partir dos arquivos presentes nos diretórios locais mapeados.
+Sem addon, a extensão recompõe a herança no próprio navegador: captura as
+chamadas `get_views` feitas pelo Odoo desde o carregamento da página, lê a
+cadeia de views e módulos instalados, e reconstrói a composição com as
+regras do Odoo 19 (prioridade, `inside`/`before`/`after`/`attributes`/
+`replace`/`move`, incluindo `$0`). O resultado é conferido contra a
+arquitetura retornada pelo servidor; quando não bate (customização Python,
+grupos sem acesso) ou a view muda entre módulos não instalados, o painel
+rebaixa a certeza em vez de escolher silenciosamente uma origem.
 
-O acesso às views continua sujeito às permissões padrão do Odoo.
+A linha exata só é afirmada quando o arquivo local mapeado bate com a
+mesma view no banco; se o arquivo só existe no banco (Studio) ou diverge do
+disco, o painel explica a limitação e, quando possível, oferece o arquivo
+relacionado com aviso de que a linha pode não corresponder.
+
+O acesso às views (`ir.ui.view`, `ir.module.module`) exige o grupo
+Configurações técnicas; sem ele, o painel indica a limitação em vez de
+travar. A captura de `get_views` também não alcança respostas servidas
+apenas do cache do próprio navegador (a extensão consulta a API padrão
+como alternativa nesse caso, mas sem a garantia de ser exatamente a
+chamada que o cliente usou).
 
 ### Fallback nativo do VS Code (Brave/Linux)
 
@@ -147,7 +164,10 @@ uma ponte restrita a `127.0.0.1:17654`, autorizada apenas para os IDs informados
 - `extension/src/rewrite.test.js` — puro, `node rewrite.test.js`.
 - `extension/src/inspect.test.js` — extrator/RPC reais, `node extension/src/inspect.test.js`.
 - `extension/src/background.test.js` — valida agendamento e mensagem do fallback.
-- `native/test_open_in_vscode.py` — protocolo, comandos do editor e erros do host.
+- `native/test_open_in_vscode.py` — protocolo, comandos do editor, `locate_view` e erros do host.
+- `extension/tests/compose.cjs` — recomposição de herança (Odoo 19) contra um
+  navegador real, sem Odoo: `node extension/tests/compose.cjs`. Requer
+  Playwright acessível pelo Node (`CHROME_PATH` para um Chromium local).
 - `extension/tests/browser.cjs` — Playwright contra Odoo real, sem debug.
   Requer Playwright acessível pelo Node e um banco isolado já instalado:
 
