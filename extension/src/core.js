@@ -113,25 +113,19 @@ OdooXray.LocalGateway = class LocalGateway {
   }
 
   send(request, respond) {
-    this.runtime.sendNativeMessage(this.nativeHost, request, (response) => {
-      const nativeError = this.runtime.lastError?.message || response?.error;
-      if (!nativeError && response?.ok) { respond(response); return; }
-      this.bridge(request).then(respond).catch((error) => respond({
-        error: [nativeError, 'ponte local: ' + error.message].filter(Boolean).join('; '),
-      }));
-    });
-  }
-
-  lookup(request, respond) {
     this.bridge(request).then(respond).catch((error) => {
       this.native(request, respond, 'ponte local: ' + error.message);
     });
   }
+
+  lookup(request, respond) {
+    this.send(request, respond);
+  }
 };
 
 OdooXray.BackgroundController = class BackgroundController {
-  constructor({ runtime, storage, gateway, validator, schedule = setTimeout, fallbackDelay = 900 }) {
-    Object.assign(this, { runtime, storage, gateway, validator, schedule, fallbackDelay });
+  constructor({ runtime, storage, gateway, validator }) {
+    Object.assign(this, { runtime, storage, gateway, validator });
   }
   start() { this.runtime.onMessage.addListener(this.handle.bind(this)); }
   handle(message, sender, respond) {
@@ -147,8 +141,7 @@ OdooXray.BackgroundController = class BackgroundController {
       });
       return true;
     }
-    this.schedule(() => this.gateway.send({ action: 'open', file: message.file, line: message.line }, respond),
-      this.fallbackDelay);
+    this.gateway.send({ action: 'open', file: message.file, line: message.line }, respond);
     return true;
   }
 };
