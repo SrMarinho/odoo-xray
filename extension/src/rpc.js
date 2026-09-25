@@ -38,10 +38,14 @@ async function xrayResolveAction(route) {
   return xrayActions.get(route);
 }
 
+// Returns null, never the raw route, when the action can't be resolved to a
+// model (client action, action without model, or one this user can't read):
+// sending that route to call_kw as if it were a model name gets a cryptic
+// server 404 instead of a clear "no model here" message.
 async function xrayResolveModel(route) {
   if (route.includes('.')) return route;
   if (!xrayModels.has(route)) {
-    const promise = xrayResolveAction(route).then((action) => action?.res_model || route);
+    const promise = xrayResolveAction(route).then((action) => action?.res_model || null);
     xrayModels.set(route, promise);
   }
   return xrayModels.get(route);
@@ -49,6 +53,7 @@ async function xrayResolveModel(route) {
 
 async function xrayLocateField(model, field) {
   model = await xrayResolveModel(model);
+  if (!model) return { error: 'Não foi possível identificar o modelo desta tela.' };
   const key = model + '|' + field;
   if (xrayCache.has(key)) return xrayCache.get(key);
   const promise = Promise.all([
@@ -67,6 +72,7 @@ async function xrayLocateField(model, field) {
 
 async function xrayResolveInspection(info) {
   const viewModel = await xrayResolveModel(info.model);
+  if (!viewModel) return { ...info, model: null, fieldModelError: 'Não foi possível identificar o modelo desta tela.' };
   if (!info.column || !info.context?.subview) return { ...info, model: viewModel };
   try {
     const fields = await xrayCallKw(viewModel, 'fields_get', [[info.context.subview], ['relation']]);
@@ -105,6 +111,7 @@ async function xrayLocateView(info) {
       .catch((e) => ({ error: e.message }));
   }
   const model = await xrayResolveModel(info.viewModel || info.model);
+  if (!model) return { error: 'Não foi possível identificar o modelo desta tela.' };
   const warnings = [];
   const capture = await xrayGetCapture();
   const entries = (capture?.captured || []).filter((entry) => entry.model === model && entry.result.form);
@@ -184,6 +191,7 @@ async function xrayResolveFile(file) {
 
 async function xrayLocateMethod(model, method) {
   model = await xrayResolveModel(model);
+  if (!model) return { error: 'Não foi possível identificar o modelo desta tela.' };
   return xrayLocalRequest({ action: 'locate_method', model, method })
     .catch((e) => ({ error: e.message }));
 }
