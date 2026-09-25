@@ -198,7 +198,7 @@ let xrayPinnedAnchor = null;
 
 function xrayElementTitle(info) {
   if (info.tag === 'menu') return 'Menu: ' + (info.label || info.menuXmlId || info.name);
-  if (info.field) return info.model + '.' + info.field;
+  if (info.field) return (info.model || '?') + '.' + info.field;
   const detail = info.label || info.name;
   return '<' + (info.tag || 'element') + (detail ? ' ' + detail : '') + '>';
 }
