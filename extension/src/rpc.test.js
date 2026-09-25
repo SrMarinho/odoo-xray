@@ -35,6 +35,12 @@ test('unresolved action never reaches call_kw as a model name', async () => {
   assert.ok(context.calls.every((call) => call.model !== 'action-654'));
 });
 
+test('missing route resolves to null instead of throwing', async () => {
+  const context = makeContext([]);
+  const model = await vm.runInContext('xrayResolveModel(undefined)', context);
+  assert.equal(model, null);
+});
+
 test('resolved action model is used for fields_get', async () => {
   const context = makeContext([{ id: 654, res_model: 'res.partner' }]);
   await vm.runInContext('xrayResolveModel("action-654")', context).then((model) => {

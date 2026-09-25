@@ -43,6 +43,7 @@ async function xrayResolveAction(route) {
 // sending that route to call_kw as if it were a model name gets a cryptic
 // server 404 instead of a clear "no model here" message.
 async function xrayResolveModel(route) {
+  if (!route) return null;
   if (route.includes('.')) return route;
   if (!xrayModels.has(route)) {
     const promise = xrayResolveAction(route).then((action) => action?.res_model || null);
