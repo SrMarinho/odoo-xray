@@ -92,21 +92,39 @@ OdooXray.LocalGateway = class LocalGateway {
     this.bridgeUrl = options.bridgeUrl || 'http://127.0.0.1:17654/open';
   }
 
+  bridge(request) {
+    return this.fetch(this.bridgeUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Odoo-XRay-Extension': this.runtime.id },
+      body: JSON.stringify(request),
+    }).then(async (response) => {
+      const body = await response.json();
+      if (!response.ok || !body.ok) throw new Error(body.error || 'ponte local recusou o pedido');
+      return body;
+    });
+  }
+
+  native(request, respond, previousError = '') {
+    this.runtime.sendNativeMessage(this.nativeHost, request, (response) => {
+      const nativeError = this.runtime.lastError?.message || response?.error;
+      if (!nativeError && response?.ok) { respond(response); return; }
+      respond({ error: [previousError, nativeError].filter(Boolean).join('; ') });
+    });
+  }
+
   send(request, respond) {
     this.runtime.sendNativeMessage(this.nativeHost, request, (response) => {
-      const nativeError = this.runtime.lastError?.message;
+      const nativeError = this.runtime.lastError?.message || response?.error;
       if (!nativeError && response?.ok) { respond(response); return; }
-      this.fetch(this.bridgeUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Odoo-XRay-Extension': this.runtime.id },
-        body: JSON.stringify(request),
-      }).then(async (bridgeResponse) => {
-        const body = await bridgeResponse.json();
-        if (!bridgeResponse.ok || !body.ok) throw new Error(body.error || 'ponte local recusou o pedido');
-        respond(body);
-      }).catch((error) => respond({
+      this.bridge(request).then(respond).catch((error) => respond({
         error: [nativeError, 'ponte local: ' + error.message].filter(Boolean).join('; '),
       }));
+    });
+  }
+
+  lookup(request, respond) {
+    this.bridge(request).then(respond).catch((error) => {
+      this.native(request, respond, 'ponte local: ' + error.message);
     });
   }
 };
@@ -125,7 +143,7 @@ OdooXray.BackgroundController = class BackgroundController {
       this.storage.sync.get(['projectRoots', 'mappings'], (settings) => {
         const roots = Array.isArray(settings.projectRoots) ? settings.projectRoots :
           (settings.mappings || []).map((mapping) => mapping.host);
-        this.gateway.send({ ...message.request, roots }, respond);
+        this.gateway.lookup({ ...message.request, roots }, respond);
       });
       return true;
     }

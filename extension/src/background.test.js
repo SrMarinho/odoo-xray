@@ -40,85 +40,80 @@ const context = vm.createContext({
 });
 
 vm.runInContext(fs.readFileSync(path.join(__dirname, 'background.js'), 'utf8'), context);
-let response;
-const pending = listener(
-  { type: 'xray.openInEditor', file: '/tmp/model.py', line: 37 },
-  { id: 'extension-id', tab: { url: 'http://localhost:8069/odoo/contacts' } },
-  value => { response = value; },
-);
-assert.equal(pending, true);
-assert.equal(JSON.stringify(nativeRequest), JSON.stringify({ action: 'open', file: '/tmp/model.py', line: 37 }));
-assert.equal(JSON.stringify(response), JSON.stringify({ ok: true }));
-
-response = null;
-assert.equal(listener(
-  { type: 'xray.localRequest', request: { action: 'locate_field', model: 'res.partner', field: 'name' } },
-  { id: 'extension-id', tab: { url: 'http://localhost:8069/odoo/res.partner/1' } },
-  value => { response = value; },
-), true);
-assert.equal(nativeRequest.action, 'locate_field');
-assert.equal(JSON.stringify(nativeRequest.roots), JSON.stringify(['/tmp/project']));
-assert.equal(response.ok, true);
-
-storageSettings = { mappings: [{ container: '/mnt/project', host: '/tmp/legacy-project' }] };
-listener(
-  { type: 'xray.localRequest', request: { action: 'resolve_file', file: '/mnt/project/models/x.py' } },
-  { id: 'extension-id', tab: { url: 'http://localhost:8069/odoo/res.partner/1' } },
-  value => { response = value; },
-);
-assert.equal(nativeRequest.action, 'resolve_file');
-assert.equal(JSON.stringify(nativeRequest.roots), JSON.stringify(['/tmp/legacy-project']));
-storageSettings = { projectRoots: ['/tmp/project'], mappings: [{ host: '/tmp/ignored' }] };
-
-response = null;
-assert.equal(listener(
-  { type: 'xray.openInEditor', file: 'relative.py', line: 0 },
-  { id: 'extension-id', tab: { url: 'http://localhost:8069/odoo' } },
-  value => { response = value; },
-), false);
-assert.equal(response.ok, false);
-
-response = null;
-assert.equal(listener(
-  { type: 'xray.localRequest', request: { action: 'locate_view', xml_id: 'sale.view_order_form',
-    arch_fs: 'sale/views/sale_order_views.xml', arch: '<form/>', nodes: [0, 1] } },
-  { id: 'extension-id', tab: { url: 'http://localhost:8069/odoo/sale.order/1' } },
-  value => { response = value; },
-), true);
-assert.equal(nativeRequest.action, 'locate_view');
-assert.equal(JSON.stringify(nativeRequest.roots), JSON.stringify(['/tmp/project']));
-assert.equal(response.ok, true);
-
-response = null;
-assert.equal(listener(
-  { type: 'xray.localRequest', request: { action: 'locate_view', xml_id: 'sale.view_order_form',
-    arch_fs: 'sale/views/sale_order_views.xml', arch: '<form/>', nodes: [-1] } },
-  { id: 'extension-id', tab: { url: 'http://localhost:8069/odoo/sale.order/1' } },
-  value => { response = value; },
-), false);
-assert.equal(response.ok, false, 'negative node indexes are rejected');
-
-response = null;
-assert.equal(listener(
-  { type: 'xray.localRequest', request: { action: 'locate_menu', xml_id: 'abastecimento.menu_overview' } },
-  { id: 'extension-id', tab: { url: 'http://localhost:8069/odoo/action-373/1' } },
-  value => { response = value; },
-), true);
-assert.equal(nativeRequest.action, 'locate_menu');
-assert.equal(nativeRequest.xml_id, 'abastecimento.menu_overview');
-assert.equal(response.ok, true);
-
 (async () => {
+  const dispatch = (message, url = 'http://localhost:8069/odoo/res.partner/1') =>
+    new Promise((resolve) => listener(message, { id: 'extension-id', tab: { url } }, resolve));
+
+  let response = await dispatch(
+    { type: 'xray.openInEditor', file: '/tmp/model.py', line: 37 },
+    'http://localhost:8069/odoo/contacts',
+  );
+  assert.equal(JSON.stringify(nativeRequest), JSON.stringify({ action: 'open', file: '/tmp/model.py', line: 37 }));
+  assert.deepEqual(response, { ok: true });
+
+  bridgeEnabled = true;
+  response = await dispatch(
+    { type: 'xray.localRequest', request: { action: 'locate_field', model: 'res.partner', field: 'name' } },
+  );
+  assert.equal(JSON.parse(bridgeRequest.options.body).action, 'locate_field');
+  assert.deepEqual(JSON.parse(bridgeRequest.options.body).roots, ['/tmp/project']);
+  assert.equal(response.ok, true);
+
+  storageSettings = { mappings: [{ container: '/mnt/project', host: '/tmp/legacy-project' }] };
+  await dispatch(
+    { type: 'xray.localRequest', request: { action: 'resolve_file', file: '/mnt/project/models/x.py' } },
+  );
+  assert.equal(JSON.parse(bridgeRequest.options.body).action, 'resolve_file');
+  assert.deepEqual(JSON.parse(bridgeRequest.options.body).roots, ['/tmp/legacy-project']);
+  storageSettings = { projectRoots: ['/tmp/project'], mappings: [{ host: '/tmp/ignored' }] };
+
+  response = await dispatch(
+    { type: 'xray.openInEditor', file: 'relative.py', line: 0 },
+    'http://localhost:8069/odoo',
+  );
+  assert.equal(response.ok, false);
+
+  response = await dispatch(
+    { type: 'xray.localRequest', request: { action: 'locate_view', xml_id: 'sale.view_order_form',
+      arch_fs: 'sale/views/sale_order_views.xml', arch: '<form/>', nodes: [0, 1] } },
+    'http://localhost:8069/odoo/sale.order/1',
+  );
+  assert.equal(JSON.parse(bridgeRequest.options.body).action, 'locate_view');
+  assert.deepEqual(JSON.parse(bridgeRequest.options.body).roots, ['/tmp/project']);
+  assert.equal(response.ok, true);
+
+  response = await dispatch(
+    { type: 'xray.localRequest', request: { action: 'locate_view', xml_id: 'sale.view_order_form',
+      arch_fs: 'sale/views/sale_order_views.xml', arch: '<form/>', nodes: [-1] } },
+    'http://localhost:8069/odoo/sale.order/1',
+  );
+  assert.equal(response.ok, false, 'negative node indexes are rejected');
+
+  response = await dispatch(
+    { type: 'xray.localRequest', request: { action: 'locate_menu', xml_id: 'abastecimento.menu_overview' } },
+    'http://localhost:8069/odoo/action-373/1',
+  );
+  assert.equal(JSON.parse(bridgeRequest.options.body).action, 'locate_menu');
+  assert.equal(JSON.parse(bridgeRequest.options.body).xml_id, 'abastecimento.menu_overview');
+  assert.equal(response.ok, true);
+
+  bridgeEnabled = false;
+  nativeResponse = { ok: true, locations: [{ file: '/tmp/native-model.py' }] };
+  context.chrome.runtime.lastError = null;
+  const nativeFallback = await dispatch(
+    { type: 'xray.localRequest', request: { action: 'locate_field', model: 'res.partner', field: 'email' } },
+  );
+  assert.equal(nativeRequest.action, 'locate_field');
+  assert.equal(nativeFallback.locations[0].file, '/tmp/native-model.py');
+
   bridgeEnabled = true;
   nativeResponse = undefined;
   context.chrome.runtime.lastError = { message: 'Specified native messaging host not found.' };
-  const fallback = await new Promise(resolve => listener(
-    { type: 'xray.localRequest', request: { action: 'locate_field', model: 'res.partner', field: 'email' } },
-    { id: 'extension-id', tab: { url: 'http://localhost:8069/odoo/res.partner/1' } },
-    resolve,
-  ));
+  const fallback = await dispatch(
+    { type: 'xray.openInEditor', file: '/tmp/model.py', line: 41 },
+  );
   assert.equal(bridgeRequest.url, 'http://127.0.0.1:17654/open');
-  assert.equal(JSON.parse(bridgeRequest.options.body).field, 'email');
+  assert.equal(JSON.parse(bridgeRequest.options.body).action, 'open');
   assert.equal(fallback.ok, true);
   assert.equal(fallback.locations[0].file, '/tmp/model.py');
   console.log('background.test.js: OK');
