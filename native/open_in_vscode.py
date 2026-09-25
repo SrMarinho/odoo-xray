@@ -401,6 +401,28 @@ def validate_request(message):
     return file_path, line
 
 
+def display_env():
+    """Merge live DISPLAY/WAYLAND_DISPLAY from the systemd user manager into
+    the process environment. A service started before the compositor
+    exports these (WantedBy=default.target races graphical session setup on
+    many window managers, e.g. Hyprland without UWSM) would otherwise launch
+    GUI apps with no display target, silently."""
+    env = dict(os.environ)
+    try:
+        output = subprocess.run(
+            ['systemctl', '--user', 'show-environment'],
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+            text=True, timeout=5,
+        ).stdout
+    except (OSError, subprocess.SubprocessError):
+        return env
+    for line in output.splitlines():
+        key, _, value = line.partition('=')
+        if key in ('DISPLAY', 'WAYLAND_DISPLAY') and value:
+            env[key] = value
+    return env
+
+
 def editor_command(file_path, line):
     target = '%s:%d' % (file_path, line)
     if shutil.which('flatpak'):
@@ -421,11 +443,12 @@ def editor_command(file_path, line):
 def open_editor(file_path, line):
     command = editor_command(file_path, line)
     if os.environ.get('XRAY_NATIVE_DRY_RUN') != '1':
+        env = display_env()
         if command[:3] == ['flatpak', 'run', 'com.visualstudio.code']:
             process = subprocess.Popen(
                 command, stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                start_new_session=True,
+                start_new_session=True, env=env,
             )
             # Catch an immediate launcher failure without waiting for the GUI
             # process, whose lifetime is the editor window itself.
@@ -441,6 +464,7 @@ def open_editor(file_path, line):
                 stderr=subprocess.PIPE,
                 text=True,
                 timeout=15,
+                env=env,
             )
             if completed.returncode:
                 detail = (completed.stderr or completed.stdout or '').strip()
@@ -455,6 +479,7 @@ def open_editor(file_path, line):
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
+                env=env,
             )
     return command
 

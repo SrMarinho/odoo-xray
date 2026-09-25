@@ -208,6 +208,20 @@ class NativeHostTest(unittest.TestCase):
             decoded = open_in_vscode.read_message(io.BytesIO(struct.pack('=I', len(payload)) + payload))
             self.assertEqual(open_in_vscode.validate_request(decoded), (source.name, 22))
 
+    @patch('open_in_vscode.subprocess.run')
+    def test_display_env_prefers_live_systemd_values(self, run):
+        run.return_value.stdout = 'DISPLAY=:1\nWAYLAND_DISPLAY=wayland-2\nOTHER=x\n'
+        with patch.dict(os.environ, {'DISPLAY': ':0', 'WAYLAND_DISPLAY': 'wayland-1'}):
+            env = open_in_vscode.display_env()
+        self.assertEqual(env['DISPLAY'], ':1')
+        self.assertEqual(env['WAYLAND_DISPLAY'], 'wayland-2')
+
+    @patch('open_in_vscode.subprocess.run', side_effect=OSError('no systemctl'))
+    def test_display_env_falls_back_when_systemctl_unavailable(self, _run):
+        with patch.dict(os.environ, {'DISPLAY': ':0'}):
+            env = open_in_vscode.display_env()
+        self.assertEqual(env['DISPLAY'], ':0')
+
     def test_rejects_missing_file(self):
         with self.assertRaisesRegex(ValueError, 'não encontrado'):
             open_in_vscode.validate_request({'action': 'open', 'file': '/missing.py', 'line': 1})
@@ -237,11 +251,12 @@ class NativeHostTest(unittest.TestCase):
                 ['code', '--goto', '/tmp/a file.py:83'],
             )
 
+    @patch('open_in_vscode.display_env', return_value={})
     @patch('open_in_vscode.time.sleep')
     @patch('open_in_vscode.shutil.which', return_value=None)
     @patch('open_in_vscode.subprocess.Popen')
     @patch('open_in_vscode.editor_command')
-    def test_flatpak_launch_does_not_wait_for_gui_exit(self, command, popen, _which, _sleep):
+    def test_flatpak_launch_does_not_wait_for_gui_exit(self, command, popen, _which, _sleep, _env):
         command.return_value = ['flatpak', 'run', 'com.visualstudio.code',
                                 '--reuse-window', '--goto', '/tmp/model.py:31']
         popen.return_value.poll.return_value = None
@@ -249,11 +264,12 @@ class NativeHostTest(unittest.TestCase):
         popen.assert_called_once()
         self.assertTrue(popen.call_args.kwargs['start_new_session'])
 
+    @patch('open_in_vscode.display_env', return_value={})
     @patch('open_in_vscode.time.sleep')
     @patch('open_in_vscode.shutil.which')
     @patch('open_in_vscode.editor_command')
     @patch('open_in_vscode.subprocess.run')
-    def test_waits_for_editor_then_focuses(self, run, command, which, _sleep):
+    def test_waits_for_editor_then_focuses(self, run, command, which, _sleep, _env):
         command.return_value = ['code', '--reuse-window', '--goto', '/tmp/model.py:31']
         which.side_effect = lambda name: '/usr/bin/hyprctl' if name == 'hyprctl' else None
         run.side_effect = [
@@ -263,10 +279,11 @@ class NativeHostTest(unittest.TestCase):
         self.assertEqual(open_in_vscode.open_editor('/tmp/model.py', 31), command.return_value)
         self.assertEqual(run.call_args_list[0].args[0][-1], '/tmp/model.py:31')
 
+    @patch('open_in_vscode.display_env', return_value={})
     @patch('open_in_vscode.shutil.which', return_value=None)
     @patch('open_in_vscode.editor_command')
     @patch('open_in_vscode.subprocess.run')
-    def test_reports_editor_failure(self, run, command, _which):
+    def test_reports_editor_failure(self, run, command, _which, _env):
         command.return_value = ['code', '--goto', '/tmp/model.py:31']
         run.return_value = subprocess.CompletedProcess(command.return_value, 1, '', 'boom')
         with self.assertRaisesRegex(RuntimeError, 'boom'):
