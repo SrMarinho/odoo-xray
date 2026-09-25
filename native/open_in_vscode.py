@@ -421,18 +421,31 @@ def editor_command(file_path, line):
 def open_editor(file_path, line):
     command = editor_command(file_path, line)
     if os.environ.get('XRAY_NATIVE_DRY_RUN') != '1':
-        completed = subprocess.run(
-            command,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            timeout=15,
-        )
-        if completed.returncode:
-            detail = (completed.stderr or completed.stdout or '').strip()
-            raise RuntimeError('VS Code terminou com código %d%s' % (
-                completed.returncode, ': ' + detail if detail else ''))
+        if command[:3] == ['flatpak', 'run', 'com.visualstudio.code']:
+            process = subprocess.Popen(
+                command, stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+            # Catch an immediate launcher failure without waiting for the GUI
+            # process, whose lifetime is the editor window itself.
+            time.sleep(0.5)
+            returncode = process.poll()
+            if returncode not in (None, 0):
+                raise RuntimeError('VS Code terminou com código %d' % returncode)
+        else:
+            completed = subprocess.run(
+                command,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=15,
+            )
+            if completed.returncode:
+                detail = (completed.stderr or completed.stdout or '').strip()
+                raise RuntimeError('VS Code terminou com código %d%s' % (
+                    completed.returncode, ': ' + detail if detail else ''))
         if shutil.which('hyprctl'):
             # O CLI já entregou arquivo e linha à instância ativa. Só então
             # trazemos essa mesma janela para o workspace atual.
@@ -443,9 +456,6 @@ def open_editor(file_path, line):
                 stderr=subprocess.PIPE,
                 text=True,
             )
-            if focus.returncode:
-                raise RuntimeError('arquivo aberto, mas não foi possível focar o VS Code: %s' %
-                                   (focus.stderr or focus.stdout).strip())
     return command
 
 

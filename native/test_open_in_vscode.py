@@ -238,6 +238,18 @@ class NativeHostTest(unittest.TestCase):
             )
 
     @patch('open_in_vscode.time.sleep')
+    @patch('open_in_vscode.shutil.which', return_value=None)
+    @patch('open_in_vscode.subprocess.Popen')
+    @patch('open_in_vscode.editor_command')
+    def test_flatpak_launch_does_not_wait_for_gui_exit(self, command, popen, _which, _sleep):
+        command.return_value = ['flatpak', 'run', 'com.visualstudio.code',
+                                '--reuse-window', '--goto', '/tmp/model.py:31']
+        popen.return_value.poll.return_value = None
+        self.assertEqual(open_in_vscode.open_editor('/tmp/model.py', 31), command.return_value)
+        popen.assert_called_once()
+        self.assertTrue(popen.call_args.kwargs['start_new_session'])
+
+    @patch('open_in_vscode.time.sleep')
     @patch('open_in_vscode.shutil.which')
     @patch('open_in_vscode.editor_command')
     @patch('open_in_vscode.subprocess.run')
