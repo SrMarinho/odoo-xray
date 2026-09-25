@@ -17,6 +17,7 @@ for extension_id in "$@"; do
 done
 
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+extension_dir=$(CDPATH= cd -- "$script_dir/../extension" && pwd)
 host_install_dir="$HOME/.local/lib/odoo-xray"
 host_path="$host_install_dir/open_in_vscode.py"
 manifest_name=com.odoo_xray.editor.json
@@ -64,6 +65,18 @@ install_manifest "$HOME/.var/app/com.brave.Browser/config/BraveSoftware/Brave-Br
 install_manifest "$HOME/.config/google-chrome/NativeMessagingHosts"
 install_manifest "$HOME/.config/chromium/NativeMessagingHosts"
 install_manifest "$HOME/.var/app/com.google.Chrome/config/google-chrome/NativeMessagingHosts"
+
+# Unpacked extensions selected from a Flatpak browser are exposed through the
+# document portal. Re-exporting the directory restores that stable portal
+# mount after a reboot, so Brave can reload the service worker and content
+# scripts that resolve Python and XML source links.
+if command -v flatpak >/dev/null 2>&1 &&
+   flatpak info com.brave.Browser >/dev/null 2>&1; then
+  if ! flatpak document-export --allow-read --app=com.brave.Browser \
+      "$extension_dir" >/dev/null; then
+    echo "Aviso: não foi possível restaurar o acesso do Brave à extensão." >&2
+  fi
+fi
 
 systemctl --user daemon-reload
 systemctl --user enable odoo-xray-bridge.service
