@@ -98,7 +98,7 @@ assert.equal(extractedMenu.menuId, 373);
       return { certainty: 'exata', evidence: [], warnings: [], applied: [args.loadedId],
         candidates: [{ signature: 'form/field[name]', created: null, replaced: null, events: [] }] };
     },
-    chrome: { runtime: { sendMessage: (message, callback) => { requests.push(message); callback({ locations: [] }); } } },
+    chrome: { runtime: { id: "test", sendMessage: (message, callback) => { requests.push(message); callback({ locations: [] }); } } },
     fetch: async (_url, options) => {
       calls++;
       const body = JSON.parse(options.body);

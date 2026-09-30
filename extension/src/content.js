@@ -163,14 +163,18 @@ function xrayActivationMatches(event) {
 }
 
 function xrayOpenInEditor(file, line) {
-  chrome.runtime.sendMessage({ type: 'xray.openInEditor', file, line }, (res) => {
-    const error = chrome.runtime.lastError?.message || res?.error;
-    if (!error) return;
+  const fallback = (error) => {
     console.warn('Odoo X-Ray: ponte local indisponível, usando protocolo do editor:', error);
     const editorUrl = xrayEditorTemplate
       .replace('{file}', encodeURI(file))
       .replace('{line}', String(line));
     window.location.href = editorUrl;
+  };
+  // chrome.runtime some quando a extensão é recarregada com a página aberta.
+  if (!chrome.runtime?.id) return fallback('extensão recarregada: recarregue a página');
+  chrome.runtime.sendMessage({ type: 'xray.openInEditor', file, line }, (res) => {
+    const error = chrome.runtime.lastError?.message || res?.error;
+    if (error) fallback(error);
   });
 }
 

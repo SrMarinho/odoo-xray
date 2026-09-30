@@ -222,6 +222,7 @@ async function xrayLocateMenu(info) {
 
 function xrayLocalRequest(request) {
   return new Promise((resolve) => {
+    if (!chrome.runtime?.id) return resolve({ error: 'extensão recarregada: recarregue a página' });
     chrome.runtime.sendMessage({ type: 'xray.localRequest', request }, (response) => {
       resolve(response || { error: chrome.runtime.lastError?.message || 'ponte local indisponível' });
     });

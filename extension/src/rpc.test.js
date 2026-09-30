@@ -21,7 +21,7 @@ function makeContext(searchReadResult) {
       };
     },
     window: { addEventListener: () => {}, postMessage: () => {} },
-    chrome: { runtime: { sendMessage: () => {} } },
+    chrome: { runtime: { id: "test", sendMessage: () => {} } },
   };
   vm.createContext(context);
   vm.runInContext(fs.readFileSync(path.join(__dirname, 'rpc.js'), 'utf8'), context);
